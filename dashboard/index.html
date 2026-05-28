@@ -700,7 +700,12 @@ async function toggleLink(from, to) {
 }
 
 /* ===== INIT ===== */
-document.addEventListener('DOMContentLoaded', () => { connectWS(); loadTeams(); });
+document.addEventListener('DOMContentLoaded', () => { 
+    connectWS(); 
+    loadTeams();
+    // Fallback polling: refresh every 3s so UI stays current even if WS drops
+    setInterval(refreshData, 3000);
+});
 </script>
 </body>
 </html>

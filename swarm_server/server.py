@@ -35,7 +35,8 @@ from swarm_server.config import (
 )
 from swarm_server.monitoring import monitor_db
 from swarm_server.tools import _daemon_registry
-from swarm_server.websocket import _main_event_loop, ws_broadcaster
+from swarm_server.websocket import ws_broadcaster
+import swarm_server.websocket as _ws_mod
 
 log = logging.getLogger("swarm.server")
 
@@ -436,9 +437,8 @@ async def root_dashboard():
 # ---------------------------------------------------------------------------
 @app.on_event("startup")
 async def on_startup():
-    global _main_event_loop
-    _main_event_loop = asyncio.get_running_loop()
-    log.info("[Startup] Main event loop captured: %s", _main_event_loop)
+    _ws_mod._main_event_loop = asyncio.get_running_loop()
+    log.info("[Startup] Main event loop captured: %s", _ws_mod._main_event_loop)
 
     from swarm_server.websocket import _broadcast
 
