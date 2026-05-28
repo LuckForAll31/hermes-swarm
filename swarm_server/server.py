@@ -437,6 +437,95 @@ async def root_dashboard():
 
 
 # ---------------------------------------------------------------------------
+# Human Inbox Endpoints
+# ---------------------------------------------------------------------------
+@app.get("/inbox")
+async def get_human_inbox():
+    from swarm_server.tools import get_pending_questions
+
+    questions = get_pending_questions()
+    # Sort by timestamp desc, keep only last 50 to avoid bloat
+    questions.sort(key=lambda q: q["timestamp"], reverse=True)
+    return JSONResponse({
+        "questions": questions[:200],
+        "pending_count": sum(1 for q in questions if q["status"] == "pending"),
+    })
+
+
+@app.post("/inbox/{agent_name}/respond")
+async def respond_to_human_question(agent_name: str, request: Request):
+    from swarm_server.tools import _pending_human_questions, _pending_lock, answer_question
+
+    body = await request.json()
+    response_text = body.get("response", "")
+    question_id = body.get("question_id")
+
+    if not response_text.strip():
+        return JSONResponse({"error": "Empty response"}, status_code=400)
+
+    daemon = daemons.get(agent_name)
+    if daemon is None:
+        return JSONResponse({"error": "Agent not found"}, status_code=404)
+
+    # If a question_id was passed, validate it matches current daemon question
+    if question_id:
+        current_qid = getattr(daemon, "human_question_id", None)
+        if current_qid != question_id:
+            # Still update registry for historical record, but warn
+            log.warning(
+                "[Inbox] QID mismatch for %s: daemon has %s, request sent %s",
+                agent_name, current_qid, question_id,
+            )
+
+    # Find the most recent pending question for this agent
+    found_qid = question_id
+    if not found_qid:
+        with _pending_lock:
+            for qid, q in sorted(
+                _pending_human_questions.items(),
+                key=lambda x: x[1]["timestamp"],
+                reverse=True,
+            ):
+                if q["agent_name"] == agent_name and q["status"] == "pending":
+                    found_qid = qid
+                    break
+
+    if not found_qid:
+        return JSONResponse(
+            {"error": f"No pending question found for agent '{agent_name}'."},
+            status_code=404,
+        )
+
+    # Update registry
+    answer_question(found_qid, response_text)
+
+    # Wake the daemon if it's still waiting
+    if daemon.state == "asking_human":
+        daemon.human_response = response_text
+        daemon.human_event.set()
+        log.info("[Inbox] Response delivered to %s (qid=%s)", agent_name, found_qid)
+    else:
+        log.warning(
+            "[Inbox] Agent %s not in asking_human state (state=%s). Response stored but not delivered.",
+            agent_name, daemon.state,
+        )
+
+    from swarm_server.websocket import _broadcast
+
+    _broadcast("human_responded", {
+        "agent_name": agent_name,
+        "question_id": found_qid,
+        "response_preview": response_text[:120],
+        "timestamp": __import__("time").time(),
+    })
+    return JSONResponse({
+        "success": True,
+        "question_id": found_qid,
+        "message": "Response delivered to agent." if daemon.state == "asking_human" else "Response stored (agent already moved on).",
+    })
+
+
+# ---------------------------------------------------------------------------
 # Startup / Shutdown
 # ---------------------------------------------------------------------------
 @app.on_event("startup")

@@ -2,7 +2,10 @@
 
 import json
 import logging
-from typing import Any, Dict
+import threading
+import time
+import uuid
+from typing import Any, Dict, List
 
 from swarm_server.monitoring import monitor_db
 from swarm_server.websocket import _broadcast
@@ -11,6 +14,51 @@ log = logging.getLogger("swarm.tools")
 
 # Maps agent_name -> AgentDaemon instance (populated at runtime by server.py)
 _daemon_registry: Dict[str, Any] = {}
+
+# Global Human Inbox Registry — tracks active/ historical human questions
+_pending_human_questions: Dict[str, Dict[str, Any]] = {}
+_pending_lock = threading.Lock()
+
+
+def add_pending_question(agent_name: str, question: str) -> str:
+    """Register a new human question and return its ID."""
+    qid = str(uuid.uuid4())
+    with _pending_lock:
+        _pending_human_questions[qid] = {
+            "id": qid,
+            "agent_name": agent_name,
+            "question": question,
+            "timestamp": time.time(),
+            "status": "pending",
+            "response": None,
+        }
+    return qid
+
+
+def get_pending_questions() -> List[Dict[str, Any]]:
+    """Return a copy of all questions (pending / answered / timed_out)."""
+    with _pending_lock:
+        return [dict(q) for q in _pending_human_questions.values()]
+
+
+def answer_question(qid: str, response: str) -> bool:
+    """Mark a question as answered with the given response text."""
+    with _pending_lock:
+        q = _pending_human_questions.get(qid)
+        if not q:
+            return False
+        q["status"] = "answered"
+        q["response"] = response
+        q["answered_at"] = time.time()
+        return True
+
+
+def mark_timed_out(qid: str) -> None:
+    """Mark a pending question as timed out."""
+    with _pending_lock:
+        q = _pending_human_questions.get(qid)
+        if q and q["status"] == "pending":
+            q["status"] = "timed_out"
 
 # ---------------------------------------------------------------------------
 # Tool Schemas
@@ -141,8 +189,6 @@ def _send_peer_message_handler(args: dict, **kwargs) -> str:
 
 
 def _ask_human_handler(args: dict, **kwargs) -> str:
-    import time
-
     question = args.get("question", "")
     task_id_arg = kwargs.get("task_id", "")
     caller = "unknown"
@@ -154,10 +200,16 @@ def _ask_human_handler(args: dict, **kwargs) -> str:
         return json.dumps({"error": f"Caller agent '{caller}' not registered."})
 
     log.info("[%s] [ask_human] Question: %s", daemon.name, question)
-    monitor_db.log_event(caller, "human_waiting", data={"question": question})
+
+    # Register in global inbox
+    qid = add_pending_question(caller, question)
+    daemon.human_question_id = qid
+
+    monitor_db.log_event(caller, "human_waiting", data={"question": question, "question_id": qid})
     _broadcast("human_waiting", {
         "agent_name": caller,
         "question": question,
+        "question_id": qid,
         "timestamp": time.time(),
     })
 
@@ -166,17 +218,25 @@ def _ask_human_handler(args: dict, **kwargs) -> str:
 
     daemon.human_event.clear()
     daemon.human_response = None
-    daemon.human_event.wait(timeout=60)  # safety: never deadlock forever
+    daemon.human_event.wait(timeout=300)  # 5 min timeout
 
     with daemon._lock:
         daemon.state = "busy"
 
+    # Check if a response was provided via the API
+    with _pending_lock:
+        q = _pending_human_questions.get(qid)
+        if q and q["status"] == "answered":
+            daemon.human_response = q["response"]
+        elif q and q["status"] == "pending":
+            q["status"] = "timed_out"
+
     if not daemon.human_event.is_set():
-        log.warning("[%s] [ask_human] Timeout — no human response in 60s", daemon.name)
+        log.warning("[%s] [ask_human] Timeout — no human response in 300s", daemon.name)
         daemon.state = "idle"
         return json.dumps({
             "success": False,
-            "error": "No human responded within 60 seconds. Proceed with your best judgment or retry later.",
+            "error": "No human responded within 5 minutes. Proceed with your best judgment or retry later.",
         })
 
     log.info("[%s] [ask_human] Response received: %s", daemon.name, daemon.human_response)
@@ -185,6 +245,7 @@ def _ask_human_handler(args: dict, **kwargs) -> str:
         "agent_name": caller,
         "question": question,
         "response": daemon.human_response,
+        "question_id": qid,
         "timestamp": time.time(),
     })
 
