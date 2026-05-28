@@ -1,0 +1,3 @@
+# Runtime data directory — ignored by git.
+*
+!.gitignore

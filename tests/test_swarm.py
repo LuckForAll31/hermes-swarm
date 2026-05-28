@@ -51,7 +51,7 @@ SERVER_PORT = 8000
 LITELLM_API_BASE = f"http://{SERVER_HOST}:4000/v1"
 SWEEP_INTERVAL_SECONDS = 10
 
-WORKSPACE_ROOT = Path(__file__).parent / "swarm_test_environment"
+WORKSPACE_ROOT = Path(__file__).parent.parent / "data"
 AGENTS_CONFIG_PATH = WORKSPACE_ROOT / "agents_config.json"
 
 DEFAULT_SOUL_TEMPLATE = (

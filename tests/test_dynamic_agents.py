@@ -11,7 +11,7 @@ def main():
     print("  Testing Dynamic Agents & Custom Soul Modifications")
     print("=" * 60)
 
-    workspace_root = Path("./swarm_test_environment")
+    workspace_root = Path(__file__).parent.parent / "data"
     config_file = workspace_root / "agents_config.json"
     
     # Remove config file if it exists to ensure a clean start
