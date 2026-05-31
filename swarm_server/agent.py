@@ -21,6 +21,7 @@ from swarm_server.config import (
     SWEEP_INTERVAL_SECONDS,
     _derive_workspace_path,
     compose_agent_soul,
+    compose_live_context,
     compose_soul_identity,
     load_agents_config,
     save_agent_config,
@@ -105,6 +106,9 @@ class AgentDaemon:
         self._hermes_home.mkdir(parents=True, exist_ok=True)
 
         self._ai_agent = None
+        # Static half of the ephemeral system prompt; set in _ensure_agent and
+        # combined with per-turn live context before each run.
+        self._base_ephemeral: Optional[str] = None
         self._sweep_task: Optional[asyncio.Task] = None
         # Event-driven wake: ingest_task signals this so the sweep loop processes
         # immediately instead of waiting out the poll interval. Created in
@@ -244,6 +248,14 @@ class AgentDaemon:
                 # =False) to avoid duplicating it in every turn.
                 self._write_soul_md(compose_soul_identity(soul_cfg))
 
+                # Static half of the ephemeral prompt (soul rules + team org +
+                # inlined workspace.md). Cached here; the dynamic half (dir tree +
+                # recent peer messages) is appended fresh each turn in
+                # _run_conversation_blocking so it stays current without rebuilding
+                # the (cached) stable system prompt.
+                self._base_ephemeral = compose_agent_soul(
+                    soul_cfg, full_cfg, include_role=False
+                )
                 self._ai_agent = AIAgent(
                     base_url=LITELLM_API_BASE,
                     api_key="sk-1234",
@@ -252,9 +264,7 @@ class AgentDaemon:
                     skip_memory=False,
                     skip_context_files=False,
                     quiet_mode=True,
-                    ephemeral_system_prompt=compose_agent_soul(
-                        soul_cfg, full_cfg, include_role=False
-                    ),
+                    ephemeral_system_prompt=self._base_ephemeral,
                     session_db=agent_session_db,
                 )
                 _register_custom_tools()
@@ -548,6 +558,19 @@ class AgentDaemon:
             # same port, so the cdp_url already in config.yaml stays valid — no
             # rewrite needed on the happy path (this is just a health probe).
             team_browser_manager.ensure_team_browser(self.cfg.get("team_id", "default"))
+            # Refresh the dynamic half of the ephemeral system prompt (live project
+            # tree + last 10 peer messages). Injected at API-call time, so updating
+            # it here keeps the context current WITHOUT invalidating the cached
+            # stable/context/volatile system prompt.
+            try:
+                base = getattr(self, "_base_ephemeral", None)
+                if base is not None:
+                    live = compose_live_context(
+                        self.cfg.get("team_id", "default"), self.name, load_agents_config()
+                    )
+                    self._ai_agent.ephemeral_system_prompt = base + "\n\n" + live
+            except Exception as e:
+                log.debug("[%s] live-context refresh failed: %s", self.name, e)
             history = self._load_session_from_db()
             return self._ai_agent.run_conversation(
                 user_message=combined,

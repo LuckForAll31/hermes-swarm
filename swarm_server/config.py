@@ -541,6 +541,126 @@ def compose_soul_identity(agent_cfg: Dict[str, Any]) -> str:
     )
 
 
+def _read_workspace_brief(team_id: str, max_chars: int = 8000) -> str:
+    """Return the team's workspace.md text for inlining into the prompt.
+
+    Truncated defensively so an oversized brief can't blow up every turn's
+    token budget. Returns a friendly placeholder if the file is absent."""
+    try:
+        p = _get_team_workspace_path(team_id) / "workspace.md"
+        if not p.exists():
+            return "(no workspace.md yet — the team brief has not been written.)"
+        text = p.read_text(encoding="utf-8").strip()
+        if len(text) > max_chars:
+            text = text[:max_chars] + "\n…(brief truncated — read workspace.md on disk for the rest.)"
+        return text or "(workspace.md is empty.)"
+    except Exception as e:
+        return f"(could not read workspace.md: {e})"
+
+
+def _build_workspace_tree(team_id: str, max_entries: int = 160) -> str:
+    """A compact directory listing of the team workspace, surfacing every
+    agent's outputs/ files so each agent can SEE what exists team-wide without
+    guessing paths. Skips noise (.git, .hermes, caches, browser profile) and
+    caps total lines so a large repo copy can't dominate the prompt."""
+    import os
+    root = _get_team_workspace_path(team_id)
+    if not root.exists():
+        return "(team workspace not created yet.)"
+    SKIP = {".git", ".hermes", "__pycache__", "node_modules", ".browser-profile",
+            "context", ".DS_Store", "dist", "build", ".venv"}
+    lines: List[str] = []
+    truncated = False
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if d not in SKIP)
+        rel = os.path.relpath(dirpath, root)
+        depth = 0 if rel == "." else rel.count(os.sep) + 1
+        if depth > 4:
+            dirnames[:] = []
+            continue
+        indent = "  " * depth
+        label = "." if rel == "." else os.path.basename(dirpath)
+        lines.append(f"{indent}{label}/")
+        for fn in sorted(filenames):
+            if fn.endswith((".pyc", ".db", ".db-shm", ".db-wal")) or fn == ".DS_Store":
+                continue
+            lines.append(f"{indent}  {fn}")
+            if len(lines) >= max_entries:
+                truncated = True
+                break
+        if truncated:
+            break
+    if truncated:
+        lines.append("…(tree truncated)")
+    return "\n".join(lines)
+
+
+def _recent_peer_messages(team_id: str, full_config: Optional[Dict[str, Any]], limit: int = 10) -> str:
+    """Render the last N send_peer_message events across the team, oldest→newest,
+    so every agent has shared awareness of recent team chatter."""
+    try:
+        from swarm_server.monitoring import monitor_db
+        # message_sent events aren't team-tagged, so scope by the team's agent set.
+        team_agents = set()
+        if full_config:
+            team_agents = {
+                aid for aid, a in (full_config.get("agents") or {}).items()
+                if a.get("team_id") == team_id
+            }
+        events = monitor_db.get_events(limit=200)  # newest first
+        msgs = []
+        for e in events:
+            if e.get("event_type") != "message_sent":
+                continue
+            frm, to = e.get("from_agent"), e.get("to_agent")
+            if team_agents and frm not in team_agents and to not in team_agents:
+                continue
+            preview = ""
+            try:
+                preview = (json.loads(e.get("data") or "{}") or {}).get("message_preview", "")
+            except Exception:
+                pass
+            msgs.append((e.get("timestamp", 0), frm, to, preview))
+            if len(msgs) >= limit:
+                break
+        if not msgs:
+            return "(no peer messages yet.)"
+        msgs.reverse()  # oldest → newest reads naturally
+        out = []
+        for ts, frm, to, preview in msgs:
+            stamp = ""
+            try:
+                from datetime import datetime
+                stamp = datetime.fromtimestamp(ts).strftime("%H:%M")
+            except Exception:
+                pass
+            out.append(f"  [{stamp}] {frm} → {to}: {preview}")
+        return "\n".join(out)
+    except Exception as e:
+        return f"(could not load peer messages: {e})"
+
+
+def compose_live_context(
+    team_id: str,
+    agent_id: str,
+    full_config: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Dynamic, per-turn context appended to the ephemeral system prompt:
+    the live project directory tree and recent team messages. Rebuilt each
+    turn (cheap) and injected at API-call time, so it never pollutes the
+    cached/stored system prompt."""
+    tree = _build_workspace_tree(team_id)
+    recent = _recent_peer_messages(team_id, full_config, limit=10)
+    return (
+        "--- LIVE TEAM CONTEXT (auto-refreshed each turn) ---\n"
+        "Project directory structure (team workspace — every agent's outputs/ "
+        "are visible here, so you can see what already exists):\n"
+        f"{tree}\n\n"
+        "Last 10 messages between teammates (send_peer_message), oldest first:\n"
+        f"{recent}\n"
+    )
+
+
 def compose_agent_soul(
     agent_cfg: Dict[str, Any],
     full_config: Optional[Dict[str, Any]] = None,
@@ -565,12 +685,17 @@ def compose_agent_soul(
         org_diagram = _build_org_diagram(full_config, team_id, agent_cfg.get("agent_id", "unknown"))
         all_members = _build_team_members_list(full_config, team_id)
 
+    # Inline the project brief (workspace.md) so it lives in the prompt itself
+    # rather than something the agent must remember to open. Read at compose time.
+    workspace_brief = _read_workspace_brief(team_id)
+
     common = COMMON_SOUL_TEMPLATE.format(
         agent_name=agent_name,
         team_id=team_id,
         allowed_peers_list=peers_str,
         sweep_interval=SWEEP_INTERVAL_SECONDS,
         workspace_path=workspace_path,
+        workspace_brief=workspace_brief,
     )
 
     body = (
