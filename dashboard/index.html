@@ -95,6 +95,10 @@ input, button, select, textarea { font-family: inherit; letter-spacing: inherit;
 .agent-card.idle::before { background: var(--idle); }
 .agent-card.busy::before { background: var(--busy); }
 .agent-card.asking_human::before { background: var(--human); }
+.card-digest { font-size: 11px; color: var(--text-secondary); margin-top: 7px; padding-top: 6px; border-top: 1px dashed var(--border); line-height: 1.4; display: flex; align-items: baseline; gap: 6px; }
+.card-digest .risk-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; position: relative; top: 1px; }
+.card-digest .dg-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-digest .dg-blocked { color: var(--human); }
 .agent-name { font-weight: 700; font-size: 13px; display: flex; align-items: center; gap: 8px; letter-spacing: -0.01em; }
 .status-dot { width: 8px; height: 8px; border-radius: 50%; position: relative; flex-shrink: 0; }
 .status-dot.idle { background: var(--idle); box-shadow: 0 0 8px rgba(62,207,142,0.6); }
@@ -131,6 +135,21 @@ input, button, select, textarea { font-family: inherit; letter-spacing: inherit;
 .msg-body.collapsed { display: none; }
 .msg-body pre { background: var(--bg-input); padding: 10px; border-radius: var(--r-sm); overflow-x: auto; font-size: 11px; font-family: var(--font-mono); margin-top: 8px; white-space: pre-wrap; border: 1px solid var(--border); }
 .msg-body .tool-call { background: rgba(167,139,250,0.07); border-left: 2px solid var(--tool); padding: 7px 11px; margin: 8px 0; border-radius: 0 var(--r-sm) var(--r-sm) 0; font-family: var(--font-mono); font-size: 11px; }
+.msg-role-badge.compaction_summary { background: rgba(245,181,68,0.16); color: var(--busy); }
+/* Compaction checkpoint divider in the History transcript */
+.cc-checkpoint { margin: 14px 0; border: 1px solid var(--busy); border-radius: var(--r-md); overflow: hidden; background: rgba(245,181,68,0.05); }
+.cc-divider { display: flex; align-items: center; gap: 8px; padding: 8px 12px; cursor: pointer; user-select: none; font-size: 11px; font-weight: 700; color: var(--busy); text-transform: uppercase; letter-spacing: 0.5px; }
+.cc-divider::before, .cc-divider::after { content: ''; height: 1px; background: var(--busy); opacity: 0.4; flex: 1; }
+.cc-divider .cc-label { flex: 0 0 auto; }
+.cc-time { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--text-dim); }
+.cc-body { padding: 10px 13px; font-size: 12px; line-height: 1.6; color: var(--text-secondary); border-top: 1px dashed var(--busy); white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow-y: auto; }
+.cc-body.collapsed { display: none; }
+/* Live-exec user / system input steps */
+.exec-step.usermsg { border-left: 3px solid var(--accent-bright); }
+.exec-step.usermsg .exec-label { color: var(--accent-bright); }
+.exec-step.sysmsg { border-left: 3px solid var(--text-muted); }
+.exec-step.sysmsg .exec-label { color: var(--text-muted); }
+.exec-step pre.collapsed { display: none; }
 .event-log-container { grid-column: 1/-1; background: var(--bg-raised); border-top: 1px solid var(--border); max-height: 230px; min-height: 100px; display: flex; flex-direction: column; transition: max-height 0.3s ease, min-height 0.3s ease; }
 .event-log-container.collapsed { max-height: 40px; min-height: 40px; }
 .event-log-header { background: var(--bg-raised); padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none; }
@@ -227,6 +246,27 @@ input, button, select, textarea { font-family: inherit; letter-spacing: inherit;
 .exec-obs { margin-top: 7px; padding-top: 7px; border-top: 1px dashed var(--border); }
 .exec-obs strong { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; }
 .exec-status { font-size: 11px; color: var(--text-muted); padding: 6px 11px; font-style: italic; display: flex; align-items: center; gap: 8px; }
+/* Digest timeline */
+.dgt { display: flex; flex-direction: column; gap: 10px; }
+.dgt-item { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--r-md); padding: 11px 13px; font-size: 12.5px; position: relative; border-left: 3px solid var(--border-strong); animation: slideIn 0.2s ease-out; }
+.dgt-item.ok { border-left-color: var(--idle); }
+.dgt-item.watch { border-left-color: var(--busy); }
+.dgt-item.stuck { border-left-color: var(--human); }
+.dgt-item.error { border-left-color: var(--danger); }
+.dgt-top { display: flex; align-items: baseline; gap: 8px; }
+.dgt-headline { font-weight: 700; flex: 1; line-height: 1.35; }
+.dgt-risk { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; padding: 2px 7px; border-radius: 999px; flex-shrink: 0; }
+.dgt-risk.ok { background: rgba(62,207,142,0.16); color: var(--idle); }
+.dgt-risk.watch { background: rgba(245,181,68,0.16); color: var(--busy); }
+.dgt-risk.stuck { background: rgba(91,157,255,0.16); color: var(--human); }
+.dgt-risk.error { background: rgba(240,90,90,0.16); color: var(--danger); }
+.dgt-time { font-size: 10px; color: var(--text-dim); flex-shrink: 0; }
+.dgt-did { margin: 7px 0 0; padding-left: 16px; color: var(--text-secondary); line-height: 1.5; }
+.dgt-did li { margin: 1px 0; }
+.dgt-line { margin-top: 6px; font-size: 11.5px; line-height: 1.4; }
+.dgt-line .k { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin-right: 6px; }
+.dgt-line.blocked .k { color: var(--human); }
+.dgt-meta { margin-top: 8px; padding-top: 7px; border-top: 1px dashed var(--border); font-size: 10px; color: var(--text-dim); display: flex; gap: 12px; flex-wrap: wrap; }
 .exec-status .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--busy); box-shadow: 0 0 8px var(--busy); animation: busy-blink 1.2s infinite; }
 .cfg-row { display: flex; gap: 10px; }
 .cfg-row .control-group { flex: 1; }
@@ -328,9 +368,11 @@ input, button, select, textarea { font-family: inherit; letter-spacing: inherit;
         <div class="view-tabs">
             <button class="view-tab active" id="tab-history" onclick="setView('history')">📜 History</button>
             <button class="view-tab" id="tab-live" onclick="setView('live')"><span class="live-dot"></span>Live Execution</button>
+            <button class="view-tab" id="tab-digests" onclick="setView('digests')">🧭 Digests</button>
         </div>
         <div class="panel-body" id="message-list" style="flex:1;overflow-y:auto"><div class="empty-state"><div class="empty-state-icon">💬</div><div>Select an agent</div></div></div>
         <div class="panel-body exec-trace" id="exec-trace" style="flex:1;overflow-y:auto;display:none"><div class="empty-state"><div class="empty-state-icon">⚡</div><div>Select an agent</div></div></div>
+        <div class="panel-body" id="digest-list" style="flex:1;overflow-y:auto;display:none"><div class="empty-state"><div class="empty-state-icon">🧭</div><div>Select an agent</div></div></div>
         <div class="controls-section">
             <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Send Task</div>
             <div class="control-group">
@@ -441,6 +483,10 @@ input, button, select, textarea { font-family: inherit; letter-spacing: inherit;
             <div class="control-group"><span class="control-label">API Key</span><input class="control-input" id="setup-key" type="password" placeholder="sk-…  (stored locally, never committed)"></div>
             <div class="control-group"><span class="control-label">Model</span><input class="control-input" id="setup-model" list="setup-model-list" placeholder="model id"><datalist id="setup-model-list"></datalist></div>
             <div style="font-size:11px;color:var(--text-muted);line-height:1.5">This is the <b>default for all agents</b>. Override it per-agent in each agent's ⚙️ settings. Stored in Hermes config format under your data dir.</div>
+            <div style="border-top:1px solid var(--border);margin:16px 0 12px"></div>
+            <div class="control-group"><span class="control-label">Monitoring summary model</span><input class="control-input" id="setup-summary-model" list="setup-model-list" placeholder="(defaults to the model above)"></div>
+            <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-secondary);cursor:pointer;margin-bottom:6px"><input type="checkbox" id="setup-digest-enabled"> Auto-summarize agent activity into status digests</label>
+            <div style="font-size:11px;color:var(--text-muted);line-height:1.5">A cheap out-of-band model reads each agent's activity and writes a short rolling status — monitor a big team by digest instead of reading every chat.</div>
             <div id="setup-error" style="color:var(--danger);font-size:11px;margin-top:8px"></div>
         </div>
         <div class="modal-footer">
@@ -599,6 +645,19 @@ function handleWS(msg) {
             modelsCache = [];
             loadModels(); refreshData();
             break;
+        case 'digest_updated':
+            if (agentData[payload.agent_name]) {
+                agentData[payload.agent_name].digest = { summary: payload.summary, timestamp: payload.timestamp };
+                renderAgents();
+            }
+            if (viewMode === 'digests' && selectedAgent === payload.agent_name) loadAgentDigests(payload.agent_name);
+            if (payload.summary && (payload.summary.risk_level === 'stuck' || payload.summary.risk_level === 'error')) {
+                logEvent('error', `${payload.agent_name} ⚠ ${payload.summary.risk_level}: ${payload.summary.headline || ''}`);
+            }
+            break;
+        case 'settings_updated':
+            logEvent('system', `Monitoring settings updated${payload.summary_model ? ' (digest model: ' + payload.summary_model + ')' : ''}`);
+            break;
         case 'telemetry':
             if (agentData[payload.agent_name]) agentData[payload.agent_name].telemetry = payload.telemetry;
             renderAgents();
@@ -621,8 +680,16 @@ function handleWS(msg) {
         case 'message_logged':
             // Only count/append messages for the agent currently being viewed,
             // otherwise the msg counter drifts up on unrelated agents' activity.
-            if (selectedAgent === payload.agent_name) {
+            if (selectedAgent === payload.agent_name && viewMode === 'history') {
                 addMessageToUI(payload);
+                msgCount++;
+                document.getElementById('msg-count').textContent = msgCount;
+            }
+            break;
+        case 'context_compacted':
+            logEvent('system', `${payload.agent_name} ⟳ context compacted (history summarized)`);
+            if (selectedAgent === payload.agent_name && viewMode === 'history' && payload.summary) {
+                addMessageToUI({ role: 'compaction_summary', content: payload.summary, timestamp: payload.timestamp });
                 msgCount++;
                 document.getElementById('msg-count').textContent = msgCount;
             }
@@ -643,6 +710,29 @@ function handleWS(msg) {
 }
 
 /* ===== RENDERERS ===== */
+const RISK_COLOR = { ok: 'var(--idle)', watch: 'var(--busy)', stuck: 'var(--human)', error: 'var(--danger)' };
+
+function renderCardDigest(digest) {
+    const dg = digest && digest.summary;
+    if (!dg || !(dg.headline || (dg.did && dg.did.length) || dg.blocked_on)) return '';
+    const risk = dg.risk_level || 'ok';
+    const color = RISK_COLOR[risk] || 'var(--text-muted)';
+    // Full picture in the tooltip; one terse line on the card.
+    const tip = [
+        dg.headline ? `▸ ${dg.headline}` : '',
+        (dg.did && dg.did.length) ? 'Did:\n  - ' + dg.did.join('\n  - ') : '',
+        dg.blocked_on ? `Blocked: ${dg.blocked_on}` : '',
+        dg.next ? `Next: ${dg.next}` : '',
+        `Risk: ${risk}`,
+    ].filter(Boolean).join('\n');
+    const headline = dg.headline || (dg.did && dg.did[0]) || '—';
+    const blocked = dg.blocked_on ? ` <span class="dg-blocked">⛔ ${esc(dg.blocked_on)}</span>` : '';
+    return `<div class="card-digest" title="${esc(tip)}">
+        <span class="risk-dot" style="background:${color}"></span>
+        <span class="dg-text">${esc(headline)}${blocked}</span>
+    </div>`;
+}
+
 function renderAgents() {
     const names = Object.keys(agentData).sort();
     const el = document.getElementById('agent-list');
@@ -662,6 +752,7 @@ function renderAgents() {
             <div class="agent-name"><span class="status-dot ${st}"></span>${esc(a.config?.name || n)}</div>
             <div class="agent-meta"><span>Queue: <span class="queue-badge">${a.pending_count || 0}</span></span><span class="peer-tag" style="background:rgba(167,139,250,0.14);color:var(--tool)" title="Model">${esc(a.config?.model || 'litellm-model')}</span>${a.config?.autonomous ? '<span class="peer-tag" style="background:rgba(245,181,68,0.16);color:var(--busy)" title="Self-drives when idle">auto</span>' : ''}${(() => { const cr = (a.config?.crons || []).filter(c => c.enabled !== false).length; return cr ? `<span class="peer-tag" style="background:rgba(62,207,142,0.14);color:var(--idle)" title="${cr} scheduled wake-up(s)">⏰ ${cr}</span>` : ''; })()}</div>
             ${ctxBar}
+            ${renderCardDigest(a.digest)}
             <div class="agent-meta" style="margin-top:4px">${peerTags}</div>
             <div class="agent-actions">
                 ${(st === 'busy' || st === 'asking_human') ? `<button class="btn btn-sm" style="background:var(--danger);border-color:var(--danger);color:white" onclick="event.stopPropagation();stopAgent('${jsAttr(n)}')">■ Stop</button>` : ''}
@@ -808,22 +899,11 @@ function renderQueues() {
 function addMessageToUI(msg) {
     const container = document.getElementById('message-list');
     if (container.querySelector('.empty-state')) container.innerHTML = '';
-    const role = msg.role || 'unknown';
-    const time = new Date().toLocaleTimeString([], {hour12:false, hour:'2-digit', minute:'2-digit', second:'2-digit'});
-    const isToolCall = msg.tool_calls && msg.tool_calls.length;
-    const block = document.createElement('div');
-    block.className = 'msg-block';
-    block.innerHTML = `
-        <div class="msg-header" onclick="this.nextElementSibling.classList.toggle('collapsed')">
-            <span class="msg-role-badge ${role}">${role}</span>
-            <span style="font-size:10px;color:var(--text-muted)">${esc(msg.task_id?.slice(0,8) || '')}</span>
-            ${isToolCall ? '<span style="font-size:10px;color:var(--tool);margin-left:4px">🔧 tools</span>' : ''}
-            <span class="msg-time">${time}</span>
-        </div>
-        <div class="msg-body collapsed">${formatMessageContent(msg)}</div>
-    `;
-    container.appendChild(block);
-    container.scrollTop = container.scrollHeight;
+    // Only auto-scroll if the user is already near the bottom, so a live append
+    // doesn't yank them away while they're scrolled up reading older history.
+    const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 80;
+    container.insertAdjacentHTML('beforeend', messageBlockHTML(msg));
+    if (nearBottom) container.scrollTop = container.scrollHeight;
 }
 
 function formatMessageContent(msg) {
@@ -847,15 +927,69 @@ function setView(mode) {
     viewMode = mode;
     document.getElementById('tab-history').classList.toggle('active', mode === 'history');
     document.getElementById('tab-live').classList.toggle('active', mode === 'live');
+    document.getElementById('tab-digests').classList.toggle('active', mode === 'digests');
     document.getElementById('message-list').style.display = mode === 'history' ? '' : 'none';
     document.getElementById('exec-trace').style.display = mode === 'live' ? '' : 'none';
-    if (mode === 'live') renderExecTrace();
+    document.getElementById('digest-list').style.display = mode === 'digests' ? '' : 'none';
+    const who = selectedAgent ? (agentData[selectedAgent]?.config?.name || selectedAgent) : '';
+    if (mode === 'history' && selectedAgent) document.getElementById('msg-header').textContent = `Messages: ${who}`;
+    if (mode === 'live') { document.getElementById('msg-header').textContent = who ? `Live: ${who}` : 'Live Execution'; renderExecTrace(); }
+    if (mode === 'digests' && selectedAgent) loadAgentDigests(selectedAgent);
+}
+
+async function loadAgentDigests(name) {
+    const el = document.getElementById('digest-list');
+    document.getElementById('msg-header').textContent = `Digests: ${agentData[name]?.config?.name || name}`;
+    try {
+        const d = await fetch(`${API_URL}/agent/${encodeURIComponent(name)}/digests?limit=100`).then(r => r.json());
+        renderDigestTimeline(name, d.digests || []);
+    } catch (e) {
+        el.innerHTML = '<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>Failed to load digests</div></div>';
+    }
+}
+
+function renderDigestTimeline(name, digests) {
+    const el = document.getElementById('digest-list');
+    document.getElementById('msg-count').textContent = digests.length;
+    if (!digests.length) {
+        el.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🧭</div><div>No digests yet</div><div style="font-size:11px;color:var(--text-muted);margin-top:6px;max-width:280px;line-height:1.5">A rolling status summary is written automatically once this agent accrues new activity.</div></div>';
+        return;
+    }
+    // Newest first — the sequence of rolling status snapshots over time.
+    const items = digests.map(row => {
+        const s = row.summary || {};
+        const risk = s.risk_level || 'ok';
+        const did = (s.did || []).length ? `<ul class="dgt-did">${s.did.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : '';
+        const blocked = s.blocked_on ? `<div class="dgt-line blocked"><span class="k">Blocked</span>${esc(s.blocked_on)}</div>` : '';
+        const next = s.next ? `<div class="dgt-line"><span class="k">Next</span>${esc(s.next)}</div>` : '';
+        const meta = [
+            row.msg_count != null ? `${row.msg_count} msgs` : '',
+            row.tokens_in != null ? `~${row.tokens_in.toLocaleString()} tok` : '',
+            row.model ? esc(row.model) : '',
+        ].filter(Boolean).map(x => `<span>${x}</span>`).join('');
+        return `<div class="dgt-item ${risk}">
+            <div class="dgt-top">
+                <span class="dgt-headline">${esc(s.headline || '—')}</span>
+                <span class="dgt-risk ${risk}">${esc(risk)}</span>
+                <span class="dgt-time">${fmtCronTime(row.timestamp)}</span>
+            </div>
+            ${did}${blocked}${next}
+            <div class="dgt-meta">${meta}</div>
+        </div>`;
+    }).join('');
+    el.innerHTML = `<div class="dgt">${items}</div>`;
 }
 
 function handleAgentExec(p) {
     const ag = p.agent_name;
     if (!ag) return;
     switch (p.kind) {
+        case 'system':
+            (execTrace[ag] = execTrace[ag] || []).push({ type: 'system', text: p.text || '' });
+            break;
+        case 'user':
+            (execTrace[ag] = execTrace[ag] || []).push({ type: 'user', text: p.text || '' });
+            break;
         case 'thinking':
             execStatus[ag] = p.text ? p.text : 'thinking…';
             break;
@@ -904,7 +1038,11 @@ function renderExecTrace() {
     }
     let html = '';
     steps.forEach(s => {
-        if (s.type === 'reasoning') {
+        if (s.type === 'system') {
+            html += `<div class="exec-step sysmsg"><div class="exec-label" style="cursor:pointer" onclick="this.nextElementSibling.classList.toggle('collapsed')">⚙️ System context · click to expand</div><pre class="collapsed" style="max-height:200px">${esc(s.text)}</pre></div>`;
+        } else if (s.type === 'user') {
+            html += `<div class="exec-step usermsg"><div class="exec-label">👤 User / Task</div><pre>${esc(s.text)}</pre></div>`;
+        } else if (s.type === 'reasoning') {
             html += `<div class="exec-step reasoning"><div class="exec-label">🧠 Thinking</div><pre>${esc(s.text)}</pre></div>`;
         } else if (s.type === 'tool') {
             const obs = s.result != null
@@ -1176,6 +1314,11 @@ async function showModelSettings(firstRun) {
     if (cur.base_url) document.getElementById('setup-baseurl').value = cur.base_url;
     document.getElementById('setup-key').value = '';
     document.getElementById('setup-error').textContent = cur.has_key ? '' : '';
+    try {
+        const s = await fetch(`${API_URL}/settings`).then(r => r.json());
+        document.getElementById('setup-summary-model').value = s.summary_model || '';
+        document.getElementById('setup-digest-enabled').checked = s.digest_enabled !== false;
+    } catch (e) { /* non-fatal */ }
     document.getElementById('modal-setup').classList.add('show');
 }
 
@@ -1223,6 +1366,16 @@ async function postSetup(body) {
         }).then(r => r.json());
         if (d.error) { document.getElementById('setup-error').textContent = d.error; return; }
         logEvent('system', `Default model set: ${d.provider}/${d.model}`);
+        // Persist the monitoring/digest settings alongside the model.
+        try {
+            await fetch(`${API_URL}/settings`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    summary_model: document.getElementById('setup-summary-model').value.trim(),
+                    digest_enabled: document.getElementById('setup-digest-enabled').checked,
+                }),
+            });
+        } catch (e) { /* non-fatal */ }
         hideModal('modal-setup');
         modelsCache = [];          // force re-fetch with the new backend
         loadModels(); refreshData();
@@ -1230,38 +1383,65 @@ async function postSetup(body) {
 }
 
 /* ===== MESSAGE PANEL ===== */
+function fmtMsgTime(ts) {
+    const d = ts ? new Date(ts * 1000) : new Date();
+    return d.toLocaleTimeString([], { hour12: false });
+}
+
+// Shared renderer for a single transcript entry (used by initial load + live
+// append). compaction_summary renders as a collapsible checkpoint divider.
+function messageBlockHTML(m) {
+    const role = m.role || 'unknown';
+    const ts = fmtMsgTime(m.timestamp);
+    if (role === 'compaction_summary') {
+        return `<div class="cc-checkpoint" data-compaction="1">
+            <div class="cc-divider" onclick="this.nextElementSibling.classList.toggle('collapsed')">
+                <span class="cc-label">⟳ Context compacted</span>
+                <span class="cc-time">${ts} · everything above was summarized · click to view</span>
+            </div>
+            <div class="cc-body collapsed">${esc(m.content || '')}</div>
+        </div>`;
+    }
+    const hasToolCall = (m.content || '').startsWith('🛠️ Tool Calls:') || (m.tool_calls && m.tool_calls.length);
+    return `<div class="msg-block">
+        <div class="msg-header" onclick="this.nextElementSibling.classList.toggle('collapsed')">
+            <span class="msg-role-badge ${role}">${esc(role)}</span>
+            <span style="font-size:10px;color:var(--text-muted)">${esc((m.task_id || '').slice(0, 8))}</span>
+            ${hasToolCall ? '<span style="font-size:10px;color:var(--tool);margin-left:4px">🔧 tools</span>' : ''}
+            <span class="msg-time">${ts}</span>
+        </div>
+        <div class="msg-body collapsed">${formatMessageContent(m)}</div>
+    </div>`;
+}
+
 async function loadMessages(agentName) {
     try {
-        const res = await fetch(`${API_URL}/monitoring/agents/${agentName}/messages?limit=100`);
+        const res = await fetch(`${API_URL}/monitoring/agents/${agentName}/messages?limit=300`);
         const data = await res.json();
         const container = document.getElementById('message-list');
-        document.getElementById('msg-header').textContent = `Messages: ${agentName}`;
-        if (!data.messages || !data.messages.length) {
+        if (viewMode === 'history') document.getElementById('msg-header').textContent = `Messages: ${agentData[agentName]?.config?.name || agentName}`;
+        // Endpoint returns newest-first; render chronologically (oldest → newest).
+        const msgs = (data.messages || []).slice().reverse();
+        if (!msgs.length) {
             container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">💬</div><div>No messages</div></div>';
             document.getElementById('msg-count').textContent = '0';
             return;
         }
-        container.innerHTML = '';
-        msgCount = data.messages.length;
+        msgCount = msgs.length;
         document.getElementById('msg-count').textContent = msgCount;
-        data.messages.forEach(m => {
-            const div = document.createElement('div');
-            div.className = 'msg-block';
-            const role = m.role || 'unknown';
-            const ts = m.timestamp ? new Date(m.timestamp * 1000).toLocaleTimeString([], {hour12:false}) : '';
-            const hasToolCall = (m.content || '').startsWith('🛠️ Tool Calls:');
-            div.innerHTML = `
-                <div class="msg-header" onclick="this.nextElementSibling.classList.toggle('collapsed')">
-                    <span class="msg-role-badge ${role}">${role}</span>
-                    <span style="font-size:10px;color:var(--text-muted)">${esc(m.task_id?.slice(0,8)||'')}</span>
-                    ${hasToolCall ? '<span style="font-size:10px;color:var(--tool);margin-left:4px">🔧 tools</span>' : ''}
-                    <span class="msg-time">${ts}</span>
-                </div>
-                <div class="msg-body collapsed">${formatMessageContent(m)}</div>
-            `;
-            container.appendChild(div);
-        });
-        container.scrollTop = container.scrollHeight;
+        container.innerHTML = msgs.map(messageBlockHTML).join('');
+        // Anchor the viewport to the LATEST compaction checkpoint: the summary +
+        // everything after it (current execution) is in view; older history sits
+        // above and is reachable by scrolling up. No compaction → show the tail.
+        const cps = container.querySelectorAll('[data-compaction="1"]');
+        if (cps.length) {
+            // Align the latest checkpoint to the top of the scroll container
+            // (rect delta is robust to offsetParent positioning).
+            const last = cps[cps.length - 1];
+            container.scrollTop += last.getBoundingClientRect().top - container.getBoundingClientRect().top;
+        } else {
+            container.scrollTop = container.scrollHeight;
+        }
     } catch (e) { console.error(e); }
 }
 
@@ -1294,7 +1474,8 @@ function selectAgent(name) {
     selectedAgent = name;
     renderAgents();
     if (name) loadMessages(name);
-    if (viewMode === 'live') renderExecTrace();
+    if (viewMode === 'live') { document.getElementById('msg-header').textContent = name ? `Live: ${agentData[name]?.config?.name || name}` : 'Live Execution'; renderExecTrace(); }
+    if (viewMode === 'digests' && name) loadAgentDigests(name);
 }
 
 function updateTarget() {

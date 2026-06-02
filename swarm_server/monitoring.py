@@ -46,11 +46,24 @@ class MonitoringDB:
         tokens      INTEGER
     );
 
+    CREATE TABLE IF NOT EXISTS digests (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp        REAL    NOT NULL,
+        agent_name       TEXT    NOT NULL,
+        team_id          TEXT,
+        summary          TEXT    NOT NULL,
+        covers_to_msg_id INTEGER,
+        msg_count        INTEGER,
+        tokens_in        INTEGER,
+        model            TEXT
+    );
+
     CREATE INDEX IF NOT EXISTS idx_events_agent     ON events(agent_name);
     CREATE INDEX IF NOT EXISTS idx_events_time      ON events(timestamp DESC);
     CREATE INDEX IF NOT EXISTS idx_events_type      ON events(event_type);
     CREATE INDEX IF NOT EXISTS idx_messages_agent   ON messages(agent_name);
     CREATE INDEX IF NOT EXISTS idx_messages_time    ON messages(timestamp DESC);
+    CREATE INDEX IF NOT EXISTS idx_digests_agent    ON digests(agent_name, timestamp DESC);
     """
 
     def __init__(self, db_path: Path) -> None:
@@ -206,13 +219,118 @@ class MonitoringDB:
             log.warning("[MonitorDB] Failed to get messages: %s", e)
             return []
 
-    def prune(self, max_events: int, max_messages: int) -> Dict[str, int]:
+    # ---- digests (Layer 3 observability) -----------------------------------
+
+    def get_new_activity(
+        self, agent_name: str, after_id: int = 0, team_id: str = None
+    ) -> Dict[str, int]:
+        """Cheap aggregate of un-digested transcript: how many new messages,
+        their estimated tokens, and the latest message id. Used by the digest
+        trigger WITHOUT pulling any content, so an idle-agent check is one row."""
+        out = {"count": 0, "tokens": 0, "max_id": after_id}
+        try:
+            with self._conn() as conn:
+                sql = ("SELECT COUNT(*) c, COALESCE(SUM(tokens),0) t, "
+                       "COALESCE(MAX(id), ?) m FROM messages "
+                       "WHERE agent_name = ? AND id > ?")
+                params = [after_id, agent_name, after_id]
+                if team_id:
+                    sql += " AND team_id = ?"
+                    params.append(team_id)
+                row = conn.execute(sql, tuple(params)).fetchone()
+                if row:
+                    out = {"count": row[0] or 0, "tokens": row[1] or 0,
+                           "max_id": row[2] or after_id}
+        except Exception as e:
+            log.warning("[MonitorDB] get_new_activity failed: %s", e)
+        return out
+
+    def get_messages_since(
+        self, agent_name: str, after_id: int = 0, team_id: str = None,
+        limit: int = 400,
+    ) -> List[dict]:
+        """New transcript messages (id > after_id), oldest-first, for summarizing."""
+        try:
+            with self._conn() as conn:
+                conn.row_factory = sqlite3.Row
+                sql = ("SELECT id, timestamp, role, content, tokens FROM messages "
+                       "WHERE agent_name = ? AND id > ?")
+                params = [agent_name, after_id]
+                if team_id:
+                    sql += " AND team_id = ?"
+                    params.append(team_id)
+                sql += " ORDER BY id ASC LIMIT ?"
+                params.append(limit)
+                rows = conn.execute(sql, tuple(params)).fetchall()
+                return [dict(r) for r in rows]
+        except Exception as e:
+            log.warning("[MonitorDB] get_messages_since failed: %s", e)
+            return []
+
+    def get_last_digest(self, agent_name: str, team_id: str = None) -> Optional[dict]:
+        try:
+            with self._conn() as conn:
+                conn.row_factory = sqlite3.Row
+                sql = "SELECT * FROM digests WHERE agent_name = ?"
+                params = [agent_name]
+                if team_id:
+                    sql += " AND team_id = ?"
+                    params.append(team_id)
+                sql += " ORDER BY id DESC LIMIT 1"
+                row = conn.execute(sql, tuple(params)).fetchone()
+                return dict(row) if row else None
+        except Exception as e:
+            log.warning("[MonitorDB] get_last_digest failed: %s", e)
+            return None
+
+    def get_digests(
+        self, agent_name: str, team_id: str = None, limit: int = 50,
+    ) -> List[dict]:
+        try:
+            with self._conn() as conn:
+                conn.row_factory = sqlite3.Row
+                sql = "SELECT * FROM digests WHERE agent_name = ?"
+                params = [agent_name]
+                if team_id:
+                    sql += " AND team_id = ?"
+                    params.append(team_id)
+                sql += " ORDER BY id DESC LIMIT ?"
+                params.append(limit)
+                rows = conn.execute(sql, tuple(params)).fetchall()
+                return [dict(r) for r in rows]
+        except Exception as e:
+            log.warning("[MonitorDB] get_digests failed: %s", e)
+            return []
+
+    def save_digest(
+        self, agent_name: str, summary: str, covers_to_msg_id: int,
+        msg_count: int, tokens_in: int, model: str, team_id: str = None,
+    ) -> Optional[int]:
+        """Persist one rolling digest. summary is a JSON string. Returns row id."""
+        try:
+            with self._conn() as conn:
+                cur = conn.execute(
+                    """INSERT INTO digests
+                       (timestamp, agent_name, team_id, summary, covers_to_msg_id,
+                        msg_count, tokens_in, model)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (time.time(), agent_name, team_id, summary, covers_to_msg_id,
+                     msg_count, tokens_in, model),
+                )
+                conn.commit()
+                return cur.lastrowid
+        except Exception as e:
+            log.warning("[MonitorDB] save_digest failed: %s", e)
+            return None
+
+    def prune(self, max_events: int, max_messages: int,
+              max_digests: int = 5000) -> Dict[str, int]:
         """Trim events/messages to the most recent N rows each (rolling retention).
 
         Without this the DB grows unbounded on a 24/7 run (state-change and
         message volume dominate). Returns rows deleted per table.
         """
-        deleted = {"events": 0, "messages": 0}
+        deleted = {"events": 0, "messages": 0, "digests": 0}
         try:
             with self._conn() as conn:
                 cur = conn.execute(
@@ -227,11 +345,17 @@ class MonitoringDB:
                     (max_messages,),
                 )
                 deleted["messages"] = cur.rowcount or 0
+                cur = conn.execute(
+                    "DELETE FROM digests WHERE id NOT IN "
+                    "(SELECT id FROM digests ORDER BY id DESC LIMIT ?)",
+                    (max_digests,),
+                )
+                deleted["digests"] = cur.rowcount or 0
                 conn.commit()
-            if deleted["events"] or deleted["messages"]:
+            if deleted["events"] or deleted["messages"] or deleted["digests"]:
                 log.info(
-                    "[MonitorDB] Pruned %d events, %d messages",
-                    deleted["events"], deleted["messages"],
+                    "[MonitorDB] Pruned %d events, %d messages, %d digests",
+                    deleted["events"], deleted["messages"], deleted["digests"],
                 )
         except Exception as e:
             log.warning("[MonitorDB] Prune failed: %s", e)

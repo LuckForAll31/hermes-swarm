@@ -17,6 +17,7 @@ from swarm_server.config import (
     CORS_ALLOWED_ORIGINS,
     DASHBOARD_DIR,
     DEFAULT_MODEL,
+    DIGEST_SWEEP_INTERVAL_SECONDS,
     LITELLM_API_BASE,
     list_proxy_models,
     list_toolsets,
@@ -24,6 +25,8 @@ from swarm_server.config import (
     MONITORING_MAX_EVENTS,
     MONITORING_MAX_MESSAGES,
     MONITORING_PRUNE_INTERVAL_SECONDS,
+    get_global_settings,
+    update_global_settings,
     SERVER_HOST,
     SERVER_PORT,
     SWARM_API_KEY,
@@ -69,6 +72,39 @@ async def _periodic_monitoring_prune():
             log.warning("[Prune] %s", e)
 
 
+async def _periodic_digest():
+    """Layer-3 observability: sweep agents and write a rolling status digest for
+    any with enough new activity (hybrid volume/time trigger lives in
+    maybe_digest; idle agents cost one COUNT(*) and are skipped).
+
+    Each digest is a blocking LLM call, so it runs in a worker thread — the
+    event loop is never blocked. A small semaphore bounds concurrent summary
+    calls so a big team can't fan out into a thundering herd on the cheap model.
+    """
+    from swarm_server.summarizer import maybe_digest
+
+    sem = asyncio.Semaphore(3)
+
+    async def _one(name: str, team_id):
+        async with sem:
+            try:
+                await asyncio.to_thread(maybe_digest, name, team_id)
+            except Exception as e:
+                log.warning("[Digest] sweep failed for %s: %s", name, e)
+
+    while True:
+        await asyncio.sleep(DIGEST_SWEEP_INTERVAL_SECONDS)
+        try:
+            jobs = [
+                _one(name, (d.cfg or {}).get("team_id"))
+                for name, d in list(daemons.items())
+            ]
+            if jobs:
+                await asyncio.gather(*jobs, return_exceptions=True)
+        except Exception as e:
+            log.warning("[Digest] sweep error: %s", e)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ---- startup ----
@@ -84,6 +120,7 @@ async def lifespan(app: FastAPI):
         register_agent_daemon(agent_name, agent_cfg, loop)
 
     prune_task = loop.create_task(_periodic_monitoring_prune())
+    digest_task = loop.create_task(_periodic_digest())
     log.info("[Startup] All agents running. LiteLLM at %s", LITELLM_API_BASE)
     log.info("[Startup] Dashboard at http://%s:%s/", SERVER_HOST, SERVER_PORT)
 
@@ -92,6 +129,7 @@ async def lifespan(app: FastAPI):
     finally:
         # ---- shutdown ----
         prune_task.cancel()
+        digest_task.cancel()
         for name, daemon in list(daemons.items()):
             _stop_daemon(daemon)
         # Stop per-team browsers (their on-disk profiles persist for next run).
@@ -202,6 +240,62 @@ async def agent_status(agent_name: str):
         "pending_count": daemon.queue.get_pending_count(),
         "session_id": daemon.cfg.get("session_id"),
     })
+
+
+def _shape_digest(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize a stored digest row: parse the summary JSON for the client."""
+    if not row:
+        return None
+    out = dict(row)
+    try:
+        out["summary"] = json.loads(row.get("summary") or "{}")
+    except Exception:
+        out["summary"] = {"headline": str(row.get("summary") or ""),
+                          "did": [], "blocked_on": None, "next": None,
+                          "risk_level": "watch"}
+    return out
+
+
+@app.get("/agent/{agent_name}/digest")
+async def agent_digest(agent_name: str):
+    """Latest rolling activity digest for an agent (Layer-3 observability).
+
+    Queried by agent_name only — names are globally unique here, and the
+    transcript these digests summarize is logged with a NULL team_id."""
+    row = monitor_db.get_last_digest(agent_name)
+    return JSONResponse({"agent": agent_name, "digest": _shape_digest(row)})
+
+
+@app.get("/agent/{agent_name}/digests")
+async def agent_digests(agent_name: str, limit: int = 50):
+    """Digest history (newest first) for an agent."""
+    rows = monitor_db.get_digests(agent_name, limit=max(1, min(limit, 200)))
+    return JSONResponse({"agent": agent_name,
+                         "digests": [_shape_digest(r) for r in rows]})
+
+
+@app.get("/settings")
+async def get_settings():
+    """Global swarm settings (e.g. the digest summary model + on/off)."""
+    return JSONResponse(get_global_settings())
+
+
+@app.post("/settings")
+async def post_settings(request: Request):
+    """Patch global swarm settings. Recognized keys: summary_model, digest_enabled."""
+    body = await request.json()
+    fields = {}
+    if "summary_model" in body:
+        fields["summary_model"] = body.get("summary_model")
+    if "digest_enabled" in body:
+        fields["digest_enabled"] = body.get("digest_enabled")
+    if not fields:
+        return JSONResponse({"error": "no recognized settings keys"}, status_code=400)
+    settings = update_global_settings(fields)
+    from swarm_server.websocket import _broadcast
+
+    _broadcast("settings_updated", settings)
+    return JSONResponse({"status": "ok", "settings": settings})
 
 
 @app.post("/agent/{agent_name}/human_response")
@@ -822,6 +916,7 @@ async def monitoring_agents(team_id: str = None):
             "config": d.cfg,
             "allowed_peers": d.cfg.get("allowed_peers", []),
             "telemetry": dict(getattr(d, "_telemetry", {}) or {}),
+            "digest": _shape_digest(monitor_db.get_last_digest(name)),
         }
     return JSONResponse({
         "agents": result,

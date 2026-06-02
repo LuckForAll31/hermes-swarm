@@ -345,6 +345,36 @@ MONITORING_MAX_EVENTS = 50000
 MONITORING_MAX_MESSAGES = 20000
 MONITORING_PRUNE_INTERVAL_SECONDS = 300
 
+# ---------------------------------------------------------------------------
+# Agent activity digests (Layer 3 observability) — an out-of-band cheap model
+# reads each agent's recorded transcript from monitoring.db and writes a short
+# rolling status summary, so an operator monitoring 10+ agents reads digests
+# instead of millions of tokens of chat. The summarizer is a plain LLM call in
+# a background loop (NOT a full Hermes agent) and never touches an agent's own
+# context or run path.
+#
+# Hybrid trigger: an agent is digested when it has accrued enough NEW transcript
+# (volume) OR enough time has passed since its last digest WITH new activity
+# (time). Idle agents (no new messages since the last digest) are skipped
+# entirely, so a quiet team costs ~nothing.
+# ---------------------------------------------------------------------------
+# Default cheap model for digests. Empty => fall back to the swarm default model
+# (DEFAULT_MODEL). The effective value is overridable live from the UI and
+# stored in the global "settings" block (see get_global_settings()).
+SUMMARY_MODEL = os.environ.get("SWARM_SUMMARY_MODEL", "").strip()
+# How often the background loop sweeps agents for digest-eligibility.
+DIGEST_SWEEP_INTERVAL_SECONDS = int(os.environ.get("SWARM_DIGEST_INTERVAL_SECONDS", "120"))
+# Volume trigger: digest once an agent accrues this many new estimated tokens.
+DIGEST_MIN_NEW_TOKENS = int(os.environ.get("SWARM_DIGEST_MIN_NEW_TOKENS", "4000"))
+# Time trigger: digest if at least this long has passed since the last digest
+# AND there is any new activity (even below the volume threshold).
+DIGEST_MAX_AGE_SECONDS = int(os.environ.get("SWARM_DIGEST_MAX_AGE_SECONDS", "900"))
+# Hard cap on transcript characters fed to the summarizer in one pass; on a
+# burst we keep the most-recent slice and note the truncation (no silent loss).
+DIGEST_INPUT_CHAR_CAP = int(os.environ.get("SWARM_DIGEST_INPUT_CHAR_CAP", "24000"))
+# Master on/off; overridable live from the UI (global "settings" block).
+DIGEST_ENABLED_DEFAULT = os.environ.get("SWARM_DIGEST_ENABLED", "1") not in ("0", "false", "False", "")
+
 # Human-inbox registry cap (in-memory) — drop oldest resolved questions past this.
 MAX_PENDING_QUESTIONS = 500
 
@@ -1255,6 +1285,47 @@ def peer_allowed(cfg: Dict[str, Any], caller: str, target: str) -> bool:
 import uuid as _uuid
 
 MAX_CRONS_PER_AGENT = int(os.environ.get("SWARM_MAX_CRONS_PER_AGENT", "25"))
+
+
+# ---------------------------------------------------------------------------
+# Global swarm settings (top-level "settings" block in agents_config.json).
+# Survives restarts; deep-copied with the rest of the config. Used for the
+# UI-configurable digest summary model + on/off, etc. Unknown/legacy configs
+# simply have no "settings" key and fall back to the env/code defaults.
+# ---------------------------------------------------------------------------
+_GLOBAL_SETTINGS_DEFAULTS = {
+    # "" => use the swarm default model (DEFAULT_MODEL) for digests.
+    "summary_model": SUMMARY_MODEL,
+    "digest_enabled": DIGEST_ENABLED_DEFAULT,
+}
+
+
+def get_global_settings() -> Dict[str, Any]:
+    """Effective global settings: stored values layered over code/env defaults."""
+    cfg = load_agents_config()
+    stored = cfg.get("settings") or {}
+    out = dict(_GLOBAL_SETTINGS_DEFAULTS)
+    for k in _GLOBAL_SETTINGS_DEFAULTS:
+        if k in stored and stored[k] is not None:
+            out[k] = stored[k]
+    return out
+
+
+def update_global_settings(fields: Dict[str, Any]) -> Dict[str, Any]:
+    """Patch known global settings keys and persist. Returns effective settings."""
+    cfg = load_agents_config()
+    settings = dict(cfg.get("settings") or {})
+    if "summary_model" in fields:
+        settings["summary_model"] = (fields["summary_model"] or "").strip()
+    if "digest_enabled" in fields:
+        settings["digest_enabled"] = bool(fields["digest_enabled"])
+    cfg["settings"] = settings
+    _save_full_config(cfg)
+    out = dict(_GLOBAL_SETTINGS_DEFAULTS)
+    for k in _GLOBAL_SETTINGS_DEFAULTS:
+        if k in settings and settings[k] is not None:
+            out[k] = settings[k]
+    return out
 
 
 def list_agent_crons(cfg: Dict[str, Any], name: str) -> List[Dict[str, Any]]:

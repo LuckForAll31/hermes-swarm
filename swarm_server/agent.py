@@ -170,6 +170,9 @@ class AgentDaemon:
         # Latest runtime telemetry (context usage, token spend, window, threshold),
         # refreshed at the end of each turn and surfaced read-only in the UI.
         self._telemetry: Dict[str, Any] = {}
+        # Hash of the last injected system context we logged, so we record it to
+        # the transcript only when it actually changes (not on every turn).
+        self._last_sysctx_hash: Optional[int] = None
 
     @staticmethod
     def _resolve_sweep_interval(cfg: Dict[str, Any]) -> float:
@@ -547,14 +550,31 @@ class AgentDaemon:
         except Exception as e:
             log.warning("[%s] Failed to persist rotated session_id: %s", self.name, e)
         log.info("[%s] Context compacted — session rotated %s -> %s", self.name, old_sid, live_sid)
+        # Recover the summary Hermes wrote at the head of the rotated (child)
+        # session — it's the compacted stand-in for everything before this point.
+        # Persist it as a 'compaction_summary' message so it shows up inline in
+        # the History transcript as a checkpoint (the dashboard anchors the
+        # viewport to the latest one).
+        summary_text = ""
+        try:
+            msgs = self._load_session_from_db()  # current_sid is the new session now
+            if msgs:
+                head = msgs[0]
+                summary_text = str(head.get("content") or "").strip()[:20000]
+        except Exception as e:
+            log.debug("[%s] compaction summary recovery failed: %s", self.name, e)
+        if summary_text:
+            monitor_db.log_message(self.name, "compaction_summary", summary_text)
         monitor_db.log_event(
             self.name, "context_compacted",
-            data={"old_session": old_sid, "new_session": live_sid},
+            data={"old_session": old_sid, "new_session": live_sid,
+                  "summary_preview": summary_text[:200]},
         )
         _broadcast("context_compacted", {
             "agent_name": self.name,
             "old_session": old_sid,
             "new_session": live_sid,
+            "summary": summary_text,
             "timestamp": time.time(),
         })
 
@@ -951,6 +971,17 @@ class AgentDaemon:
             except Exception as e:
                 log.debug("[%s] live-context refresh failed: %s", self.name, e)
             history = self._load_session_from_db()
+            # Show the actual inputs to this turn in the live trace, above the
+            # thinking/tools/answer the model produces: the injected system
+            # context first, then the user/task prompt. Ephemeral (ws-gated, not
+            # persisted) — the History tab persists these separately.
+            try:
+                sysctx = getattr(self._ai_agent, "ephemeral_system_prompt", "") or ""
+                if sysctx:
+                    self._emit_exec("system", {"text": sysctx[:6000]})
+                self._emit_exec("user", {"text": (combined or "")[:6000]})
+            except Exception:
+                pass
             return self._ai_agent.run_conversation(
                 user_message=combined,
                 task_id=f"agent_name:{self.name}",
@@ -1084,6 +1115,39 @@ class AgentDaemon:
                 if msg.get("role") == "user":
                     last_user_idx = i
             turn_messages = new_messages[last_user_idx + 1 :] if last_user_idx >= 0 else new_messages
+
+            # Record the actual turn INPUTS so History is a faithful transcript,
+            # not just the agent's replies: the injected system context (only when
+            # it changed — it's large and mostly static) followed by the user/task
+            # prompt. These precede the assistant/tool messages logged below.
+            try:
+                sysctx = getattr(self._ai_agent, "ephemeral_system_prompt", "") or ""
+                if sysctx:
+                    # Gate on the STABLE part of the prompt (the brief/soul), not
+                    # the full text: the live-context section embeds a per-turn
+                    # timestamp + team state, so hashing the whole thing would
+                    # re-log this large block every single turn. Logging on
+                    # stable-change records it ~once per session (and again only
+                    # if the brief actually changes), with a current snapshot of
+                    # the live context included for completeness.
+                    stable = getattr(self, "_base_ephemeral", "") or sysctx
+                    h = hash(stable)
+                    if h != self._last_sysctx_hash:
+                        self._last_sysctx_hash = h
+                        monitor_db.log_message(self.name, "system", sysctx, ",".join(task_ids))
+                        _broadcast("message_logged", {
+                            "agent_name": self.name, "role": "system",
+                            "content": sysctx, "task_id": task_preview,
+                            "timestamp": time.time(),
+                        })
+            except Exception as e:
+                log.debug("[%s] system-context logging failed: %s", self.name, e)
+            monitor_db.log_message(self.name, "user", combined, ",".join(task_ids))
+            _broadcast("message_logged", {
+                "agent_name": self.name, "role": "user",
+                "content": combined, "task_id": task_preview,
+                "timestamp": time.time(),
+            })
 
             for msg in turn_messages:
                 role = msg.get("role", "unknown")
