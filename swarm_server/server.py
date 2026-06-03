@@ -525,7 +525,7 @@ _EDITABLE_AGENT_FIELDS = {
     "name", "model", "provider", "autonomous", "sweep_interval", "heartbeat_seconds",
     "temperature", "max_tokens", "reasoning_effort", "max_iterations",
     "enabled_toolsets", "disabled_toolsets", "compression_threshold", "role_soul",
-    "is_supervisor", "supervisor_token_threshold",
+    "is_supervisor", "supervisor_token_threshold", "context_isolated",
 }
 # Numeric fields where an empty value means "clear → use the default".
 _NUMERIC_CLEARABLE = (

@@ -26,6 +26,7 @@ from swarm_server.config import (
     SUPERVISOR_TOKEN_THRESHOLD,
     SWEEP_INTERVAL_SECONDS,
     _derive_workspace_path,
+    _ensure_project_dir,
     compose_agent_soul,
     compose_live_context,
     compose_soul_identity,
@@ -312,6 +313,15 @@ class AgentDaemon:
                 # is available, cdp_url stays None and the agent falls back to
                 # the per-agent local browser.
                 team_id = self.cfg.get("team_id", "default")
+
+                # Point file tools + terminal at the team's ONE shared project
+                # directory. TERMINAL_CWD is what the terminal tool and relative
+                # file ops resolve against (Hermes reads it at tool-call time), so
+                # every agent on the team operates in the same real repo instead of
+                # a private folder. Also creates + git-inits the dir on first use.
+                project_dir = _ensure_project_dir(team_id)
+                os.environ["TERMINAL_CWD"] = str(project_dir)
+
                 cdp_url = team_browser_manager.ensure_team_browser(team_id)
 
                 # Per-agent model + sampling knobs (configurable from the UI;
@@ -673,6 +683,13 @@ class AgentDaemon:
         # history from the session DB, so nothing is lost.
         with self._lock:
             self._stop_requested = False
+            # A stop is a full reset — it also LIFTS any pause. Otherwise a
+            # pause-then-stop leaves _paused=True while state shows idle, and the
+            # restarted sweep loop silently refuses to drain the queue (the agent
+            # looks idle but is frozen, with no Resume button to recover it).
+            self._paused = False
+            self._pause_reason = ""
+            self._paused_by = ""
             self._ai_agent = None
             self.state = AGENT_STATE_IDLE
             self.next_sweep_at = time.time() + self._sweep_interval

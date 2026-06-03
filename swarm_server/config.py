@@ -450,8 +450,62 @@ def _derive_workspace_path(team_id: str, agent_name: str) -> Path:
 
 
 def _get_team_workspace_path(team_id: str) -> Path:
-    """Return the shared team workspace directory."""
+    """Return the shared team workspace directory.
+
+    Holds team-shared metadata — the project brief (workspace.md), the changelog
+    (agent_log.md), and each agent's per-agent runtime home (.hermes + queue db).
+    This is NOT where code/deliverables go; that is the shared project dir below.
+    """
     return WORKSPACE_ROOT / team_id / "workspace"
+
+
+def _get_project_dir(team_id: str, full_config: Optional[Dict[str, Any]] = None) -> Path:
+    """Return the single SHARED work surface for a team.
+
+    Every agent on the team reads and writes the SAME files here — there are no
+    private per-agent copies. This is the real project/repo the team builds. Both
+    the file tools and (via TERMINAL_CWD) the terminal operate here by default, so
+    ``search_files`` sees the whole project including teammates' work.
+
+    Configurable per team via ``teams.<team>.project_dir`` (an absolute path —
+    e.g. point it at a repo you already use); otherwise defaults to a managed
+    directory at ``<team>/project``.
+    """
+    cfg = full_config
+    if cfg is None:
+        try:
+            cfg = load_agents_config()
+        except Exception:
+            cfg = None
+    custom = None
+    if cfg:
+        team_cfg = (cfg.get("teams", {}) or {}).get(team_id) or {}
+        custom = team_cfg.get("project_dir")
+    if custom:
+        return Path(str(custom)).expanduser()
+    return WORKSPACE_ROOT / team_id / "project"
+
+
+def _ensure_project_dir(team_id: str, full_config: Optional[Dict[str, Any]] = None) -> Path:
+    """Resolve the shared project dir, creating it (and a git repo) if missing.
+
+    Best-effort: a fresh team gets an empty git repo so commits work from the
+    first task. If the path already exists (e.g. it points at a repo you already
+    use) nothing is reinitialized.
+    """
+    project_dir = _get_project_dir(team_id, full_config)
+    try:
+        project_dir.mkdir(parents=True, exist_ok=True)
+        if not (project_dir / ".git").exists():
+            import subprocess
+
+            subprocess.run(
+                ["git", "init", "-q"], cwd=str(project_dir), check=False,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+    except Exception:
+        pass
+    return project_dir
 
 
 def write_agent_hermes_config(
@@ -791,14 +845,14 @@ def _read_workspace_brief(team_id: str, max_chars: int = 8000) -> str:
 
 
 def _build_workspace_tree(team_id: str, max_entries: int = 160) -> str:
-    """A compact directory listing of the team workspace, surfacing every
-    agent's outputs/ files so each agent can SEE what exists team-wide without
-    guessing paths. Skips noise (.git, .hermes, caches, browser profile) and
-    caps total lines so a large repo copy can't dominate the prompt."""
+    """A compact directory listing of the team's SHARED project dir, so each
+    agent can SEE what exists in the one shared repo without guessing paths.
+    Skips noise (.git, .hermes, caches, browser profile) and caps total lines so
+    a large repo can't dominate the prompt."""
     import os
-    root = _get_team_workspace_path(team_id)
+    root = _get_project_dir(team_id)
     if not root.exists():
-        return "(team workspace not created yet.)"
+        return "(shared project not created yet.)"
     SKIP = {".git", ".hermes", "__pycache__", "node_modules", ".browser-profile",
             "context", ".DS_Store", "dist", "build", ".venv"}
     lines: List[str] = []
@@ -905,19 +959,32 @@ def compose_live_context(
     the live project directory tree and recent team messages. Rebuilt each
     turn (cheap) and injected at API-call time, so it never pollutes the
     cached/stored system prompt."""
-    tree = _build_workspace_tree(team_id)
-    recent = _recent_peer_messages(team_id, full_config, limit=10)
-    crons = _build_cron_summary(full_config, agent_id)
     try:
         from datetime import datetime
         now_line = datetime.now().astimezone().strftime("%A, %B %d, %Y %H:%M %Z")
     except Exception:
         now_line = "(unavailable)"
+
+    # Context-isolated agents (black-box tester) must not see the team's project
+    # tree or inter-agent chatter — only the time and their own cron schedule.
+    agent_cfg = ((full_config or {}).get("agents", {}) or {}).get(agent_id, {})
+    if agent_cfg.get("context_isolated"):
+        crons = _build_cron_summary(full_config, agent_id)
+        return (
+            "--- LIVE CONTEXT (auto-refreshed each turn) ---\n"
+            f"Current time: {now_line}\n\n"
+            "Your scheduled wake-ups (manage with schedule_wakeup / cancel_wakeup):\n"
+            f"{crons}\n"
+        )
+
+    tree = _build_workspace_tree(team_id)
+    recent = _recent_peer_messages(team_id, full_config, limit=10)
+    crons = _build_cron_summary(full_config, agent_id)
     return (
         "--- LIVE TEAM CONTEXT (auto-refreshed each turn) ---\n"
         f"Current time: {now_line}\n\n"
-        "Project directory structure (team workspace — every agent's outputs/ "
-        "are visible here, so you can see what already exists):\n"
+        "Shared project directory (every teammate works in this one tree — this is "
+        "what already exists; read any path here directly):\n"
         f"{tree}\n\n"
         "Last 10 messages between teammates (send_peer_message), oldest first:\n"
         f"{recent}\n\n"
@@ -941,7 +1008,10 @@ def compose_agent_soul(
     team_id = agent_cfg.get("team_id", "default")
     peers = agent_cfg.get("allowed_peers", [])
     peers_str = ", ".join(peers) if peers else "(none — you cannot message any peers yet)"
-    workspace_path = str(_derive_workspace_path(team_id, agent_cfg.get("agent_id", "unknown")))
+    # The shared work surface (all agents collaborate here) + the team metadata
+    # dir that holds the brief and changelog. No per-agent workspace folder.
+    project_dir = str(_get_project_dir(team_id, full_config))
+    team_workspace = str(_get_team_workspace_path(team_id))
 
     # Build org diagram if we have full config
     org_diagram = "(config not available for diagram)"
@@ -950,28 +1020,52 @@ def compose_agent_soul(
         org_diagram = _build_org_diagram(full_config, team_id, agent_cfg.get("agent_id", "unknown"))
         all_members = _build_team_members_list(full_config, team_id)
 
+    # Context-isolated agents (e.g. a black-box QA tester) deliberately get NO
+    # product brief, roadmap, or org chart — they must discover the product fresh,
+    # as an outside customer would. They keep only the swarm mechanics + their role
+    # + the bare list of peers to report findings to.
+    isolated = bool(agent_cfg.get("context_isolated"))
+
     # Inline the project brief (workspace.md) so it lives in the prompt itself
     # rather than something the agent must remember to open. Read at compose time.
-    workspace_brief = _read_workspace_brief(team_id)
+    if isolated:
+        workspace_brief = (
+            "(You are an EXTERNAL BLACK-BOX TESTER. You are intentionally given NO "
+            "product brief, spec, roadmap, or internal/codebase knowledge. Do not ask "
+            "for it. Discover the product yourself by using the live site as a real "
+            "first-time customer would.)"
+        )
+    else:
+        workspace_brief = _read_workspace_brief(team_id)
 
     common = COMMON_SOUL_TEMPLATE.format(
         agent_name=agent_name,
         team_id=team_id,
         allowed_peers_list=peers_str,
         sweep_interval=SWEEP_INTERVAL_SECONDS,
-        workspace_path=workspace_path,
+        project_dir=project_dir,
+        team_workspace=team_workspace,
         workspace_brief=workspace_brief,
     )
 
-    body = (
-        f"{common}\n"
-        f"--- TEAM ORGANIZATION ---\n"
-        f"Your team: {team_id}\n\n"
-        f"Agent connections and roles:\n"
-        f"{org_diagram}\n\n"
-        f"All team members:\n"
-        f"{all_members}\n"
-    )
+    if isolated:
+        body = (
+            f"{common}\n"
+            f"--- REPORTING ---\n"
+            f"You are not wired into the team's internal context and you do not see the "
+            f"org chart. When you find a bug, breakage, or confusing experience, report it "
+            f"via send_peer_message to: {peers_str}.\n"
+        )
+    else:
+        body = (
+            f"{common}\n"
+            f"--- TEAM ORGANIZATION ---\n"
+            f"Your team: {team_id}\n\n"
+            f"Agent connections and roles:\n"
+            f"{org_diagram}\n\n"
+            f"All team members:\n"
+            f"{all_members}\n"
+        )
 
     if include_role:
         role = agent_cfg.get("role_soul", f"You are the {agent_name}.")
