@@ -598,19 +598,34 @@ def _request_human_takeover_handler(args: dict, **kwargs) -> str:
         return json.dumps({"error": f"Caller agent '{caller}' not registered."})
     team_id = (daemon.cfg or {}).get("team_id", "default")
 
-    # Bring the browser onto the human's real screen (same persistent profile).
+    # Start an on-demand noVNC bridge onto the team's hidden browser and get the
+    # URL the human opens to operate it (same persistent profile).
+    vnc_url = None
     try:
         from swarm_server.browser_pool import team_browser_manager
-        team_browser_manager.begin_takeover(team_id)
+        vnc_url = team_browser_manager.begin_takeover(team_id)
     except Exception as e:
         log.error("[%s] [takeover] begin_takeover failed: %s", caller, e)
 
+    if vnc_url:
+        access = (
+            "\n\n👉 Open this link to see and operate the browser:\n" + vnc_url +
+            "\n(If you're working over SSH, first forward the port, e.g. "
+            "`ssh -L " + vnc_url.split("//127.0.0.1:")[1].split("/")[0] +
+            ":127.0.0.1:" + vnc_url.split("//127.0.0.1:")[1].split("/")[0] +
+            " <host>`, then open the link.)"
+        )
+    else:
+        access = (
+            "\n\n⚠️ Couldn't start the browser viewer automatically — the takeover "
+            "bridge (x11vnc/websockify) may be unavailable on this host."
+        )
     prompt = (
-        "🙋 BROWSER TAKEOVER requested by '" + caller + "':\n" + reason +
-        "\n\nThe agent's browser is now visible on your screen. Do the step above "
-        "in that window, then reply 'done' here to hand control back."
+        "🙋 BROWSER TAKEOVER requested by '" + caller + "':\n" + reason + access +
+        "\n\nDo the step above in that window, then reply 'done' here to hand "
+        "control back to the agent."
     )
-    log.info("[%s] [takeover] %s", daemon.name, reason)
+    log.info("[%s] [takeover] %s | vnc=%s", daemon.name, reason, vnc_url or "none")
 
     from swarm_server.agent import AGENT_STATE_ASKING_HUMAN, AGENT_STATE_BUSY
 
