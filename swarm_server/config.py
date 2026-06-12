@@ -1323,6 +1323,36 @@ import uuid as _uuid
 
 MAX_CRONS_PER_AGENT = int(os.environ.get("SWARM_MAX_CRONS_PER_AGENT", "25"))
 
+# A cron instruction must stay GOAL-level. Long step-by-step scripts freeze a
+# moment in time and the agent re-executes the stale script verbatim forever
+# (observed: a 1.7k-char daily-checkin script pinned founder to June-10 state).
+# Agents get a tight cap; humans a looser one (dashboard paste). Detailed
+# procedures belong in a workspace runbook file the instruction references.
+MAX_CRON_INSTRUCTION_CHARS_AGENT = int(os.environ.get("SWARM_MAX_CRON_INSTRUCTION_CHARS_AGENT", "600"))
+MAX_CRON_INSTRUCTION_CHARS_HUMAN = int(os.environ.get("SWARM_MAX_CRON_INSTRUCTION_CHARS_HUMAN", "4000"))
+
+_CRON_INSTRUCTION_TOO_LONG = (
+    "Instruction too long ({n} chars > {cap}). Keep cron instructions GOAL-level: "
+    "what to achieve, where the data/runbook lives, when to escalate. Write the "
+    "detailed step-by-step procedure to a file in your workspace (e.g. "
+    "docs/<name>-runbook.md) and reference its path — you'll re-read the LATEST "
+    "version each time it fires instead of replaying a frozen script."
+)
+
+
+def _validate_cron_instruction(instruction: str, created_by: str) -> str:
+    instruction = (instruction or "").strip()
+    if not instruction:
+        raise ValueError("A cron wake-up needs an instruction to run when it fires.")
+    cap = (
+        MAX_CRON_INSTRUCTION_CHARS_HUMAN
+        if created_by == "human"
+        else MAX_CRON_INSTRUCTION_CHARS_AGENT
+    )
+    if len(instruction) > cap:
+        raise ValueError(_CRON_INSTRUCTION_TOO_LONG.format(n=len(instruction), cap=cap))
+    return instruction
+
 
 # ---------------------------------------------------------------------------
 # Global swarm settings (top-level "settings" block in agents_config.json).
@@ -1530,9 +1560,7 @@ def add_agent_cron(
     """Validate + append a cron wake-up to an agent. Returns the new entry."""
     from swarm_server.cron import cron_validate
 
-    instruction = (instruction or "").strip()
-    if not instruction:
-        raise ValueError("A cron wake-up needs an instruction to run when it fires.")
+    instruction = _validate_cron_instruction(instruction, created_by)
     ok, norm = cron_validate(schedule or "")
     if not ok:
         raise ValueError(f"Invalid schedule: {norm}")
@@ -1582,10 +1610,8 @@ def update_agent_cron(
                 raise ValueError(f"Invalid schedule: {norm}")
             c["schedule"] = norm
         if "instruction" in fields:
-            instr = (fields["instruction"] or "").strip()
-            if not instr:
-                raise ValueError("Instruction cannot be empty.")
-            c["instruction"] = instr
+            # Updates come from the dashboard/REST only — human cap applies.
+            c["instruction"] = _validate_cron_instruction(fields["instruction"], "human")
         if "enabled" in fields:
             c["enabled"] = bool(fields["enabled"])
         _save_full_config(cfg)

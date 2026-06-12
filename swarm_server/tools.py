@@ -522,9 +522,13 @@ _SCHEDULE_WAKEUP_TOOL_SCHEMA = {
             "time the swarm injects your 'instruction' to you as a new task and you "
             "act on it — use this for anything periodic (a 9am competitor check, an "
             "hourly metrics pull, a Monday digest) so it happens on time without a "
-            "human. The instruction must be SELF-CONTAINED: when it fires you may "
-            "have no other context. Check your current wake-ups (listed in the live "
-            "team context) first so you don't create duplicates."
+            "human. Keep the instruction GOAL-LEVEL and short (max 600 chars): what "
+            "to achieve, where the data lives, when to escalate. Do NOT inline a "
+            "step-by-step script — the world changes and a frozen script rots; put "
+            "detailed procedures in a workspace runbook file (e.g. "
+            "docs/<name>-runbook.md) and reference its path so each firing follows "
+            "the file's LATEST version. Check your current wake-ups (listed in the "
+            "live team context) first so you don't create duplicates."
         ),
         "parameters": {
             "type": "object",
@@ -540,7 +544,10 @@ _SCHEDULE_WAKEUP_TOOL_SCHEMA = {
                 },
                 "instruction": {
                     "type": "string",
-                    "description": "The self-contained task to run each time it fires.",
+                    "description": (
+                        "Goal-level task to run each time it fires (max 600 chars). "
+                        "Reference a workspace runbook file for detailed steps."
+                    ),
                 },
             },
             "required": ["schedule", "instruction"],

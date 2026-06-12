@@ -357,10 +357,17 @@ SELF_LOOP_NUDGE = (
 # and the schedule_wakeup tool). Unlike the heartbeat, a cron carries a SPECIFIC
 # instruction the agent (or operator) attached when scheduling it.
 CRON_WAKEUP_PROMPT = (
-    "[SCHEDULED WAKE-UP — cron '{schedule}' fired at {time}; you run 24/7 and "
-    "nobody may be watching]\n"
-    "This is an automated wake-up you or your operator scheduled. Carry out the "
-    "instruction below, then end your turn (do not loop):\n\n"
+    "[SCHEDULED WAKE-UP — cron '{schedule}' fired at {time}; scheduled "
+    "{scheduled_ago} ago; you run 24/7 and nobody may be watching]\n"
+    "This is an automated wake-up you or your operator scheduled. The instruction "
+    "below states the GOAL — it is not a frozen script. It was written "
+    "{scheduled_ago} ago and the world has moved since: re-derive the right steps "
+    "from CURRENT state (files, data, recent messages), and if it references a "
+    "runbook/doc, follow that file's latest version. It never overrides fresher "
+    "directives from a human or your supervisor. If it has become obsolete or "
+    "superseded, log_decision why and fix the schedule itself (schedule_wakeup / "
+    "cancel_wakeup) instead of executing it on autopilot.\n"
+    "Carry out the instruction, then end your turn (do not loop):\n\n"
     "{instruction}"
 )
 

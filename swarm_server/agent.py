@@ -1866,9 +1866,14 @@ class AgentDaemon:
                 continue
             sched = c.get("schedule") or ""
             import datetime
+            created_at = c.get("created_at")
+            scheduled_ago = (
+                _age_short(max(0, now - created_at)) if created_at else "a while"
+            )
             prompt = CRON_WAKEUP_PROMPT.format(
                 schedule=sched,
                 time=datetime.datetime.now().strftime('%Y-%m-%d %H:%M'),
+                scheduled_ago=scheduled_ago,
                 instruction=c.get("instruction", ""),
             )
             log.info("[%s] Cron '%s' (%s) fired — injecting scheduled task", self.name, cid, sched)
