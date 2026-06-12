@@ -317,6 +317,112 @@ _LOG_DECISION_TOOL_SCHEMA = {
     },
 }
 
+_CLOSE_LEDGER_ENTRY_TOOL_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "close_ledger_entry",
+        "description": (
+            "Permanently close ONE orphaned OPEN delegation in the team ledger — an "
+            "entry whose work you have VERIFIED was already delivered or made obsolete "
+            "through a different task chain, so no RESULT carrying its id will ever "
+            "arrive. Use it ONCE per entry instead of re-analyzing the same stale row "
+            "on every check-in. Do NOT use it to dodge work you still owe: closing an "
+            "entry asserts the underlying work is done/obsolete, and the closure is "
+            "logged with your name and reason. Only the delegator, the delegate, or a "
+            "supervisor may close an entry."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "msg_id": {
+                    "type": "string",
+                    "description": (
+                        "The delegation id exactly as shown in the ledger (the 8-char "
+                        "prefix from 'OPEN [xxxxxxxx]' or 'id=...' lines is enough)."
+                    ),
+                },
+                "reason": {
+                    "type": "string",
+                    "description": (
+                        "ONE line: how you verified the work is complete/obsolete "
+                        "(e.g. 'delivered via task 9d2c41ab, RESULT logged 06:14 Jun 11')."
+                    ),
+                },
+            },
+            "required": ["msg_id", "reason"],
+        },
+    },
+}
+
+_READ_FILES_TOOL_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "read_files",
+        "description": (
+            "Read SEVERAL files in ONE call. Strongly preferred over a chain of "
+            "single read_file calls: every extra tool round trip re-sends your "
+            "entire conversation to the model, so reading 5 files one-by-one "
+            "costs ~5x what this does. Use whenever you already know 2+ paths "
+            "you need (a module plus its template, a config plus the code that "
+            "reads it, …). Returns each file under a '=== path ===' header; "
+            "missing files report their error inline without failing the rest."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "paths": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "2-8 file paths (relative to your workspace, or absolute)."
+                    ),
+                },
+            },
+            "required": ["paths"],
+        },
+    },
+}
+
+_READ_FILES_MAX = 8
+_READ_FILES_CHARS_EACH = 24_000
+
+
+def _read_files_handler(args: dict, **kwargs) -> str:
+    from pathlib import Path
+
+    from swarm_server.config import _derive_workspace_path, load_agents_config
+
+    caller = _caller_from_kwargs(kwargs)
+    paths = args.get("paths") or []
+    if not isinstance(paths, list) or not paths:
+        return json.dumps({"error": "paths must be a non-empty array of strings."})
+    if len(paths) > _READ_FILES_MAX:
+        return json.dumps({"error": f"At most {_READ_FILES_MAX} files per call "
+                                    f"(got {len(paths)}). Split the batch."})
+    cfg = load_agents_config()
+    team_id = cfg["agents"].get(caller, {}).get("team_id", "default")
+    try:
+        ws = Path(_derive_workspace_path(team_id, caller))
+    except Exception:
+        ws = Path(".")
+
+    chunks = []
+    for raw in paths:
+        p = Path(str(raw)).expanduser()
+        if not p.is_absolute():
+            p = ws / p
+        try:
+            text = p.read_text(errors="replace")
+            note = ""
+            if len(text) > _READ_FILES_CHARS_EACH:
+                text = text[:_READ_FILES_CHARS_EACH]
+                note = f"\n…[truncated at {_READ_FILES_CHARS_EACH} chars — use read_file for the rest]"
+            chunks.append(f"=== {raw} ({len(text)} chars) ===\n{text}{note}")
+        except Exception as e:
+            chunks.append(f"=== {raw} ===\n[unreadable: {e}]")
+    return "\n\n".join(chunks)
+
+
 _LOG_ACTION_TOOL_SCHEMA = {
     "type": "function",
     "function": {
@@ -535,6 +641,8 @@ _SWARM_TOOL_SCHEMAS = (
     _ASK_HUMAN_TOOL_SCHEMA,
     _LOG_DECISION_TOOL_SCHEMA,
     _LOG_ACTION_TOOL_SCHEMA,
+    _CLOSE_LEDGER_ENTRY_TOOL_SCHEMA,
+    _READ_FILES_TOOL_SCHEMA,
     _GET_SELF_CONFIG_TOOL_SCHEMA,
     _REQUEST_CONFIG_CHANGE_TOOL_SCHEMA,
     _SCHEDULE_WAKEUP_TOOL_SCHEMA,
@@ -928,6 +1036,30 @@ def _log_decision_handler(args: dict, **kwargs) -> str:
     return json.dumps({"success": True, "message": "Decision recorded."})
 
 
+def _close_ledger_entry_handler(args: dict, **kwargs) -> str:
+    caller = _caller_from_kwargs(kwargs)
+    msg_id = (args.get("msg_id") or "").strip()
+    reason = " ".join((args.get("reason") or "").split()).strip()
+    if not reason:
+        return json.dumps({"success": False,
+                           "error": "A one-line verification reason is required."})
+
+    from swarm_server.config import load_agents_config
+
+    cfg = load_agents_config()
+    agent_cfg = cfg["agents"].get(caller, {})
+    team_id = agent_cfg.get("team_id", "default")
+    is_supervisor = bool(agent_cfg.get("is_supervisor"))
+
+    result = monitor_db.close_delegation_manual(
+        msg_id, by_agent=caller, reason=reason, team_id=team_id,
+        require_participant=not is_supervisor)
+    if result.get("success"):
+        log.info("[close_ledger_entry] %s closed %s: %s",
+                 caller, result.get("msg_id", "?")[:8], reason[:120])
+    return json.dumps(result)
+
+
 def _log_action_handler(args: dict, **kwargs) -> str:
     import time
 
@@ -1261,6 +1393,24 @@ def _register_custom_tools():
                 description="Append one significant decision to the shared decision log.",
             )
             log.info("[log_decision] Registered")
+        if "close_ledger_entry" not in (registry.get_tool_to_toolset_map() or {}):
+            registry.register(
+                name="close_ledger_entry",
+                toolset="custom",
+                schema=_CLOSE_LEDGER_ENTRY_TOOL_SCHEMA["function"],
+                handler=_close_ledger_entry_handler,
+                description="Close one verified-complete/obsolete OPEN ledger entry.",
+            )
+            log.info("[close_ledger_entry] Registered")
+        if "read_files" not in (registry.get_tool_to_toolset_map() or {}):
+            registry.register(
+                name="read_files",
+                toolset="custom",
+                schema=_READ_FILES_TOOL_SCHEMA["function"],
+                handler=_read_files_handler,
+                description="Read several files in one call (batch read_file).",
+            )
+            log.info("[read_files] Registered")
         if "log_action" not in (registry.get_tool_to_toolset_map() or {}):
             registry.register(
                 name="log_action",

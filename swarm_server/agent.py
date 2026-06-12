@@ -34,6 +34,9 @@ from swarm_server.config import (
     SUPERVISOR_SWEEP_MAX_IDLE_SKIPS,
     SUPERVISOR_SWEEP_PER_PEER_FLOOR,
     SWEEP_INTERVAL_SECONDS,
+    SWEEP_PAYLOAD_AGE_ENABLED,
+    SWEEP_PAYLOAD_KEEP_RECENT,
+    SWEEP_PAYLOAD_MIN_CHARS,
     TOOL_RESULT_AGE_ENABLED,
     TOOL_RESULT_AGE_KEEP_MESSAGES,
     TOOL_RESULT_AGE_MIN_CHARS,
@@ -47,9 +50,12 @@ from swarm_server.config import (
 from swarm_server.prompts import (
     AUTONOMOUS_HEARTBEAT_PROMPT,
     CRON_WAKEUP_PROMPT,
+    DIRECTIVE_HEARTBEAT_PROMPT,
+    MISSING_RESULT_NUDGE,
     SELF_LOOP_NUDGE,
     SUPERVISOR_SWEEP_PROMPT,
     TEXT_ONLY_TURN_NUDGE,
+    age_stale_sweep_payloads,
     age_stale_tool_results,
     compose_agent_soul,
     compose_live_context,
@@ -318,6 +324,8 @@ class AgentDaemon:
         # Guard so the "you ended in the chat" corrective fires at most once per
         # occurrence (never loops): set when nudged, cleared when a turn delivers.
         self._text_only_nudged: bool = False
+        # Delegated-task ids already nudged for a missing RESULT (once each).
+        self._result_nudged_ids: set = set()
         self._sweep_task: Optional[asyncio.Task] = None
         # Event-driven wake: ingest_task signals this so the sweep loop processes
         # immediately instead of waiting out the poll interval. Created in
@@ -424,6 +432,11 @@ class AgentDaemon:
         # a full turn every interval forever; any real work or inbound message
         # resets it to the base cadence.
         self._hb_misses = 0
+        # Active time-boxed directive (set via POST /agent/{name}/task with
+        # duration_minutes). While set and unexpired, idle heartbeats re-present
+        # it at the BASE cadence (no backoff) instead of the generic check-in.
+        # In-memory only: a server restart ends the push, which is acceptable.
+        self._directive: Optional[Dict[str, Any]] = None
         # Cross-turn repetition guard: per-turn tool-call signature sets for the
         # last few turns, plus the last time a corrective was injected.
         self._turn_sigs: deque = deque(maxlen=max(SELF_LOOP_WINDOW, 8))
@@ -766,6 +779,27 @@ class AgentDaemon:
                     self._ai_agent.tools = list(self._ai_agent.tools or [])
                     self._ai_agent.tools.append(_LOG_ACTION_TOOL_SCHEMA)
                     self._ai_agent.valid_tool_names.add("log_action")
+                # Ledger hygiene: dismiss orphaned OPEN delegations (work that
+                # completed via a different chain, so no RESULT will ever close
+                # them). All agents — delegators close their own orphans,
+                # supervisors close any.
+                if ("close_ledger_entry" not in existing_names
+                        and "close_ledger_entry" not in disabled):
+                    from swarm_server.tools import _CLOSE_LEDGER_ENTRY_TOOL_SCHEMA
+                    self._ai_agent.tools = list(self._ai_agent.tools or [])
+                    self._ai_agent.tools.append(_CLOSE_LEDGER_ENTRY_TOOL_SCHEMA)
+                    self._ai_agent.valid_tool_names.add("close_ledger_entry")
+                # Batch file reads: one call for 2-8 files instead of N single
+                # read_file round trips (each round trip re-bills the whole
+                # context — measured zero model-side batching, so the batching
+                # has to live in the tool). Not for supervisors (no file work).
+                if (not self.cfg.get("is_supervisor")
+                        and "read_files" not in existing_names
+                        and "read_files" not in disabled):
+                    from swarm_server.tools import _READ_FILES_TOOL_SCHEMA
+                    self._ai_agent.tools = list(self._ai_agent.tools or [])
+                    self._ai_agent.tools.append(_READ_FILES_TOOL_SCHEMA)
+                    self._ai_agent.valid_tool_names.add("read_files")
                 # Self-awareness: read own config/telemetry + PROPOSE changes
                 # (human approves in the UI — agents cannot self-apply).
                 from swarm_server.tools import (
@@ -912,6 +946,15 @@ class AgentDaemon:
                     keep_recent=TOOL_RESULT_AGE_KEEP_MESSAGES,
                     min_chars=TOOL_RESULT_AGE_MIN_CHARS,
                     quantum=TOOL_RESULT_AGE_QUANTUM,
+                )
+            # Supervisor counterpart: stub all but the newest sweep payloads
+            # (the user-side team feeds that dominate a supervisor's history;
+            # its own verdicts stay verbatim as the durable record).
+            if SWEEP_PAYLOAD_AGE_ENABLED and self.cfg.get("is_supervisor"):
+                msgs = age_stale_sweep_payloads(
+                    msgs,
+                    keep_recent=SWEEP_PAYLOAD_KEEP_RECENT,
+                    min_chars=SWEEP_PAYLOAD_MIN_CHARS,
                 )
             log.debug("[%s] Loaded %d messages from session %s", self.name, len(msgs), current_sid)
             return msgs
@@ -1298,22 +1341,150 @@ class AgentDaemon:
                 return
         except Exception:
             return
+        now = time.time()
+        directive = self._directive
+        if directive and now >= float(directive.get("until_ts", 0)):
+            monitor_db.log_event(self.name, "directive_expired",
+                                 data={"from_agent": directive.get("from_agent"),
+                                       "preview": str(directive.get("payload", ""))[:150]})
+            log.info("[%s] Time-boxed directive expired — back to normal idle cadence",
+                     self.name)
+            self._directive = directive = None
         # Adaptive cadence: each consecutive no-op heartbeat doubles the wait
         # (capped), so a 24/7 agent with genuinely nothing to do costs
         # exponentially less instead of inventing busywork every interval.
-        effective = self.effective_heartbeat_interval(self._heartbeat_seconds, self._hb_misses)
-        if time.time() - self._last_active < effective:
+        # While a directive is ACTIVE the backoff is suspended: an idle agent
+        # mid-push is owing work, not resting.
+        misses = 0 if directive else self._hb_misses
+        effective = self.effective_heartbeat_interval(self._heartbeat_seconds, misses)
+        if now - self._last_active < effective:
             return
-        self._last_active = time.time()
+        self._last_active = now
         log.info("[%s] Autonomous heartbeat — injecting continue-mission task (backoff x%d)",
-                 self.name, 2 ** min(self._hb_misses, HEARTBEAT_BACKOFF_MAX_DOUBLINGS))
+                 self.name, 2 ** min(misses, HEARTBEAT_BACKOFF_MAX_DOUBLINGS))
         monitor_db.log_event(self.name, "autonomous_heartbeat",
-                             data={"misses": self._hb_misses, "effective_interval": effective})
+                             data={"misses": self._hb_misses, "effective_interval": effective,
+                                   "directive": bool(directive)})
         import datetime
-        prompt = AUTONOMOUS_HEARTBEAT_PROMPT.format(
-            time=datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
-        )
+        if directive:
+            remaining = max(0.0, float(directive["until_ts"]) - now)
+            prompt = DIRECTIVE_HEARTBEAT_PROMPT.format(
+                remaining=_age_short(remaining),
+                time=datetime.datetime.now().strftime('%Y-%m-%d %H:%M'),
+                from_agent=directive.get("from_agent", "human"),
+                directive=str(directive.get("payload", ""))[:1500],
+            )
+        else:
+            prompt = AUTONOMOUS_HEARTBEAT_PROMPT.format(
+                time=datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
+            )
         self.ingest_task("autonomous", prompt)
+
+    def set_directive(self, payload: str, duration_minutes: float,
+                      from_agent: str = "human") -> None:
+        """Arm a time-boxed directive: until it expires, idle heartbeats
+        re-present `payload` at base cadence instead of the generic check-in,
+        so a multi-hour push survives the queue going empty."""
+        try:
+            minutes = float(duration_minutes)
+        except (TypeError, ValueError):
+            return
+        if minutes <= 0:
+            return
+        self._directive = {
+            "payload": str(payload or ""),
+            "until_ts": time.time() + minutes * 60.0,
+            "from_agent": from_agent,
+        }
+        monitor_db.log_event(self.name, "directive_set",
+                             data={"from_agent": from_agent,
+                                   "duration_minutes": minutes,
+                                   "preview": str(payload or "")[:150]})
+        log.info("[%s] Time-boxed directive armed for %.0f min (from %s)",
+                 self.name, minutes, from_agent)
+
+    def _apply_turn_output_guards(self, tasks: List[Dict[str, Any]],
+                                  turn_messages: List[Dict[str, Any]]) -> List[str]:
+        """Post-turn output guards. Returns the turn's tool-call names (the
+        heartbeat bookkeeping that follows in the run loop reuses them).
+
+        1. Missing-RESULT handoff: a peer/human TASK or QUESTION turn that ends
+           without ANY send_peer_message left the delegator blind — whether the
+           turn was truncated by the iteration budget (empty final) or just
+           stopped after a free-text status. Force ONE status RESULT per task
+           id; sweeps and ledger ages remain the backstop beyond it. (Observed:
+           a worker silently stalled twice this way for 95 minutes.)
+        2. Text-only turn guard: fires ONLY when the turn ACTED on nothing —
+           its tool calls (if any) were all read-only, then it wrote a summary.
+           Notification-only turns (heartbeat, guard follow-up, incoming
+           RESULT/STATUS/FYI) are EXEMPT: they legitimately end in "looked
+           around, nothing to do, summarized". (Observed: 4 false nudges in one
+           night, every one on a heartbeat-analysis or RESULT-acknowledgment
+           turn, ~50–230k tokens each.) Capped at one nudge per occurrence via
+           _text_only_nudged; cleared once a turn acts. Both guards are skipped
+           for supervisors and on stop."""
+        assts = [m for m in turn_messages if m.get("role") == "assistant"]
+        tool_names = [
+            tc.get("function", {}).get("name")
+            for m in assts for tc in (m.get("tool_calls") or [])
+        ]
+        acted = any(n and n not in self._READONLY_TOOLS for n in tool_names)
+        wrote_summary = (
+            bool(assts)
+            and not assts[-1].get("tool_calls")
+            and len((assts[-1].get("content") or "").strip()) > 40
+        )
+
+        def _is_notification(t: Dict[str, Any]) -> bool:
+            if t.get("from_agent") in ("autonomous", "turn-guard"):
+                return True
+            p = str(t.get("payload") or "").lstrip()
+            return p.startswith(("[RESULT", "[STATUS", "[FYI"))
+
+        notification_only = bool(tasks) and all(
+            _is_notification(t) for t in tasks)
+
+        missing_result_fired = False
+        if not self.cfg.get("is_supervisor") and not self._stop_requested:
+            delegated = [
+                t for t in tasks
+                if str(t.get("payload") or "").lstrip().startswith(
+                    ("[TASK", "[QUESTION"))
+                and t.get("from_agent") not in ("turn-guard", "autonomous")
+            ]
+            if delegated and "send_peer_message" not in tool_names:
+                for t in delegated:
+                    m = re.search(r"id=([0-9a-fA-F-]{6,})",
+                                  str(t.get("payload") or ""))
+                    short_id = m.group(1) if m else t.get("id", "")[:8]
+                    if short_id in self._result_nudged_ids:
+                        continue
+                    self._result_nudged_ids.add(short_id)
+                    if len(self._result_nudged_ids) > 100:
+                        self._result_nudged_ids = set(
+                            list(self._result_nudged_ids)[-50:])
+                    missing_result_fired = True
+                    self.ingest_task("turn-guard", MISSING_RESULT_NUDGE.format(
+                        task_id=short_id, from_agent=t.get("from_agent", "?")))
+                    monitor_db.log_event(
+                        self.name, "missing_result_nudge",
+                        data={"task_id": short_id,
+                              "from_agent": t.get("from_agent")})
+                    log.info("[%s] turn on task %s ended without a RESULT "
+                             "— forced one status handoff", self.name, short_id)
+
+        if acted:
+            self._text_only_nudged = False
+        elif (wrote_summary and not self._text_only_nudged
+              and not missing_result_fired
+              and not notification_only
+              and not self._stop_requested
+              and not self.cfg.get("is_supervisor")):
+            self._text_only_nudged = True
+            self.ingest_task("turn-guard", TEXT_ONLY_TURN_NUDGE)
+            log.info("[%s] read-only/no-op turn ended in summary — "
+                     "enqueued one corrective", self.name)
+        return tool_names
 
     @staticmethod
     def effective_heartbeat_interval(base: float, misses: int) -> float:
@@ -1365,7 +1536,7 @@ class AgentDaemon:
     # patch, send_peer_message, log_decision, browser_*, deploy, …) counts as
     # acting, so a real deploy-via-terminal turn is never falsely nudged.
     _READONLY_TOOLS = {
-        "read_file", "search_files", "web_search", "web_extract",
+        "read_file", "read_files", "search_files", "web_search", "web_extract",
         "get_self_config", "list_files", "list_dir", "grep", "glob", "ls",
         "todo", "memory", "get_messages",
     }
@@ -1499,6 +1670,10 @@ class AgentDaemon:
                     f"{d.get('from_agent')}→{d.get('to_agent')} "
                     f"open {_age_short(age)}{flag}: "
                     f"{(d.get('summary') or '').strip()[:80]}")
+            lines.append(
+                "An OPEN entry verified complete/obsolete via another chain is an "
+                "orphan — close it with close_ledger_entry(msg_id, reason) instead "
+                "of re-flagging it every sweep.")
         else:
             lines.append("Open delegations involving your agents: none")
         try:
@@ -2214,25 +2389,7 @@ class AgentDaemon:
             # _text_only_nudged so it can never loop; cleared once a turn acts.
             # Skipped for supervisors (their feed prompt governs them) and on stop.
             try:
-                assts = [m for m in turn_messages if m.get("role") == "assistant"]
-                tool_names = [
-                    tc.get("function", {}).get("name")
-                    for m in assts for tc in (m.get("tool_calls") or [])
-                ]
-                acted = any(n and n not in self._READONLY_TOOLS for n in tool_names)
-                wrote_summary = (
-                    bool(assts)
-                    and not assts[-1].get("tool_calls")
-                    and len((assts[-1].get("content") or "").strip()) > 40
-                )
-                if acted:
-                    self._text_only_nudged = False
-                elif (wrote_summary and not self._text_only_nudged
-                      and not self._stop_requested
-                      and not self.cfg.get("is_supervisor")):
-                    self._text_only_nudged = True
-                    self.ingest_task("turn-guard", TEXT_ONLY_TURN_NUDGE)
-                    log.info("[%s] read-only/no-op turn ended in summary — enqueued one corrective", self.name)
+                tool_names = self._apply_turn_output_guards(tasks, turn_messages)
 
                 # --- Idle-heartbeat backoff bookkeeping ----------------------
                 # CONCRETE means the turn touched something outside coordination

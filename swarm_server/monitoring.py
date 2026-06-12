@@ -516,6 +516,55 @@ class MonitoringDB:
             log.warning("[MonitorDB] answer_delegation failed: %s", e)
             return False
 
+    def close_delegation_manual(self, msg_id_prefix: str, by_agent: str = None,
+                                reason: str = "", team_id: str = None,
+                                require_participant: bool = False) -> dict:
+        """Close an open delegation by msg_id (full id or unambiguous prefix).
+
+        For orphaned ledger rows whose work completed via another task chain:
+        no RESULT carrying their msg_id will ever arrive, so without an explicit
+        dismiss they sit OPEN forever — re-analyzed on every heartbeat and
+        periodically forcing stale-delegation supervisor sweeps."""
+        prefix = (msg_id_prefix or "").strip()
+        if len(prefix) < 6:
+            return {"success": False,
+                    "error": "msg_id must be at least 6 characters."}
+        try:
+            with self._conn() as conn:
+                sql = ("SELECT msg_id, from_agent, to_agent FROM delegations "
+                       "WHERE status='open' AND msg_id LIKE ?")
+                params: list = [prefix + "%"]
+                if team_id:
+                    sql += " AND team_id = ?"; params.append(team_id)
+                rows = conn.execute(sql + " LIMIT 3", tuple(params)).fetchall()
+                if not rows:
+                    return {"success": False,
+                            "error": f"No OPEN delegation matches '{prefix}' — "
+                                     "it may already be closed."}
+                if len(rows) > 1:
+                    return {"success": False,
+                            "error": f"'{prefix}' is ambiguous "
+                                     f"({len(rows)} open matches) — use more characters."}
+                msg_id, d_from, d_to = rows[0]
+                if require_participant and by_agent not in (d_from, d_to):
+                    return {"success": False,
+                            "error": f"Only {d_from} or {d_to} (or a supervisor) "
+                                     "may close this entry."}
+                conn.execute(
+                    "UPDATE delegations SET status='closed', answered_at=? "
+                    "WHERE msg_id=? AND status='open'",
+                    (time.time(), msg_id),
+                )
+                conn.commit()
+            self.log_event(by_agent or "unknown", "ledger_entry_closed",
+                           data={"msg_id": msg_id, "from_agent": d_from,
+                                 "to_agent": d_to, "reason": (reason or "")[:200]})
+            return {"success": True, "msg_id": msg_id,
+                    "from_agent": d_from, "to_agent": d_to}
+        except Exception as e:
+            log.warning("[MonitorDB] close_delegation_manual failed: %s", e)
+            return {"success": False, "error": str(e)}
+
     def get_open_delegations(self, to_agent: str = None, from_agent: str = None,
                              team_id: str = None, limit: int = 50) -> List[dict]:
         """Outstanding TASK/QUESTION delegations (status='open'), newest first."""

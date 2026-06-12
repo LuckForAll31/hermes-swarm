@@ -319,6 +319,16 @@ TOOL_RESULT_AGE_KEEP_MESSAGES = int(os.environ.get("SWARM_TOOL_RESULT_AGE_KEEP_M
 TOOL_RESULT_AGE_MIN_CHARS = int(os.environ.get("SWARM_TOOL_RESULT_AGE_MIN_CHARS", "600"))
 TOOL_RESULT_AGE_QUANTUM = int(os.environ.get("SWARM_TOOL_RESULT_AGE_QUANTUM", "20"))
 
+# Supervisor counterpart: a supervisor's history is dominated by its own past
+# sweep PAYLOADS (user-side team feeds — measured 96% of one overseer's session
+# chars), which tool-result aging never touches. At replay, all but the last
+# SWEEP_PAYLOAD_KEEP_RECENT payloads are stubbed from the marker onward; the
+# supervisor's own verdicts stay verbatim.
+SWEEP_PAYLOAD_AGE_ENABLED = os.environ.get(
+    "SWARM_SWEEP_PAYLOAD_AGE_ENABLED", "1").lower() not in ("0", "false", "no")
+SWEEP_PAYLOAD_KEEP_RECENT = int(os.environ.get("SWARM_SWEEP_PAYLOAD_KEEP_RECENT", "2"))
+SWEEP_PAYLOAD_MIN_CHARS = int(os.environ.get("SWARM_SWEEP_PAYLOAD_MIN_CHARS", "500"))
+
 # ---------------------------------------------------------------------------
 # Live-context size caps. The live block is rebuilt fresh each turn AND rides
 # in history for every iteration of that turn, so each item here is paid

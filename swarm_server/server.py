@@ -280,7 +280,21 @@ async def agent_ingest(agent_name: str, request: Request):
     if daemon is None:
         return JSONResponse({"error": "agent not found"}, status_code=404)
     task_id = daemon.ingest_task(from_agent, payload)
-    return JSONResponse({"task_id": task_id, "status": "queued"})
+    resp = {"task_id": task_id, "status": "queued"}
+    # Optional time-boxed directive: until it expires, the agent's idle
+    # heartbeats re-present this payload (base cadence, no backoff) so a
+    # multi-hour push survives the queue going empty instead of being
+    # treated as a one-shot task.
+    duration = body.get("duration_minutes")
+    if duration:
+        import time
+
+        try:
+            daemon.set_directive(payload, float(duration), from_agent=from_agent)
+            resp["directive_until"] = time.time() + float(duration) * 60.0
+        except (TypeError, ValueError):
+            pass
+    return JSONResponse(resp)
 
 
 @app.get("/agent/{agent_name}/status")

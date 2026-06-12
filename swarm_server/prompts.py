@@ -216,6 +216,12 @@ Read it before re-trying anything; never hunt for an error with console scans.
   CAPTCHA or verification code — never retry through one.
 - Never type a secret into a site it wasn't stored for, and never paste
   secrets into messages, files, or logs.
+- NEVER inline a secret value into code or a file you write — always
+  `os.environ.get(...)` / read it from .env at runtime. Inlined secrets are
+  auto-redacted from your own history, so the file you wrote will look
+  "corrupted"/truncated to you afterwards even though it is fine on disk —
+  do NOT loop rewriting it. (Disk state is ground truth; your echo is
+  redacted.)
 
 ## Sub-agents for grindy work
 
@@ -233,9 +239,10 @@ mechanical job ~10x cheaper there than in your own turn.
 
 ## Economy
 
-- Batch independent tool calls into ONE assistant message — every extra
-  round trip re-sends your ENTIRE context to the model. Read 3 files? Three
-  tool calls in one message, not three turns.
+- Need 2+ files? ONE read_files(paths=[...]) call — never a chain of single
+  read_file calls. Every extra tool round trip re-sends your ENTIRE context
+  to the model.
+- Never re-read a file you read earlier this turn unless you changed it.
 - 5+ known mechanical steps → ONE browser_steps / browser_keys(from_file) /
   delegate_task call, never N separate round trips.
 - web_search to find information; the browser only to open a URL you already
@@ -286,6 +293,44 @@ TEXT_ONLY_TURN_NUDGE = (
     "• If there is genuinely nothing left to do — end with a SINGLE `log_decision` "
     "noting the conclusion, or no output at all.\n"
     "Do NOT reply with another summary or 'If you want, I can…'. Act or record — once."
+)
+
+# Idle check-in while a TIME-BOXED DIRECTIVE is active. A normal heartbeat
+# lets the agent conclude "all tasks closed → idle is correct"; a directive
+# explicitly is not satisfied by an empty queue. (Observed: a founder given a
+# 4-hour push closed it out in 25 minutes and idled the rest.) Re-presents
+# the directive verbatim with remaining time until it expires; heartbeat
+# backoff is suspended while one is active.
+DIRECTIVE_HEARTBEAT_PROMPT = (
+    "[ACTIVE DIRECTIVE — {remaining} remaining; check-in, queue empty]\n"
+    "Current Time: {time}\n"
+    "You are mid-way through a time-boxed directive from {from_agent}. An empty "
+    "queue does NOT complete it — closed sub-tasks only mean the last increment "
+    "landed. The directive, verbatim:\n"
+    "---\n{directive}\n---\n"
+    "Review what has shipped so far (RECENTLY COMPLETED, decisions), then start "
+    "the next highest-leverage increment toward it NOW — do it or delegate it, "
+    "ending in the tool call that does it. Only two exceptions: every avenue is "
+    "blocked on a human (end with no tool call), or you can argue the directive "
+    "is genuinely exhausted — then log_decision that argument ONCE and idle."
+)
+
+# Injected ONCE per delegated task when the worker's turn on a peer/human
+# TASK/QUESTION ended without ANY send_peer_message — the silent-stall mode:
+# the worker ran out of iterations (or just stopped) and its progress lives
+# only in its own conversation, invisible to the delegator. (Observed: a
+# worker stalled twice this way for 95 minutes until a supervisor sweep
+# happened to chase it.) One forced status RESULT converts the silent stall
+# into a cheap, honest handoff.
+MISSING_RESULT_NUDGE = (
+    "[TURN ENDED WITHOUT A RESULT — task {task_id} from {from_agent}]\n"
+    "Your last turn on this task ended (iteration budget or stop) without "
+    "sending ANY message back. The delegator cannot see your conversation — "
+    "only send_peer_message delivers. Send ONE concise status RESULT now:\n"
+    "  send_peer_message(to_agent=\"{from_agent}\", kind=\"RESULT\", "
+    "reply_to=\"{task_id}\", message=<DONE: …  REMAINING: …  NEXT: …>)\n"
+    "If the work is incomplete, say exactly what remains — a partial status is "
+    "infinitely better than silence. Do nothing else this turn."
 )
 
 # Injected ONCE (cooldown-limited) when the daemon's repetition guard sees the
@@ -635,6 +680,10 @@ def _open_delegations_block(team_id: str, agent_id: str) -> str:
             lines.append("  AWAITING A RESULT (you delegated, not yet answered):")
             for d in awaiting:
                 lines.append(_line(d, f"to {d['to_agent']}"))
+        lines.append(
+            "  An entry you have VERIFIED is already delivered/obsolete via another "
+            "chain: close it ONCE with close_ledger_entry(msg_id, reason) — never "
+            "re-analyze the same stale entry on a later check-in.")
         return "\n".join(lines)
     except Exception as e:
         return f"(could not load delegations: {e})"
@@ -878,6 +927,56 @@ def age_stale_tool_results(
             m = {**m, "content": stub}
             changed = True
         out.append(m)
+    return out if changed else messages
+
+
+SWEEP_PAYLOAD_MARKER = "[SUPERVISOR SWEEP"
+SWEEP_PAYLOAD_ELIDED_STUB = (
+    "[old sweep payload elided — that window's full team feed is stale; your "
+    "verdict for it follows below. Only the LATEST sweep payload is actionable.]"
+)
+
+
+def age_stale_sweep_payloads(
+    messages: List[Dict[str, Any]],
+    keep_recent: int,
+    min_chars: int,
+) -> List[Dict[str, Any]]:
+    """Replace OLD supervisor-sweep payloads in replayed history with a stub.
+
+    A supervisor's history is dominated by its own past sweep inputs — measured
+    96% of one overseer's session chars were old `[SUPERVISOR SWEEP …]` team
+    feeds (the *user* side, which tool-result aging never touches) — and every
+    sweep iteration re-bills all of them. An old feed is pure history: the
+    verdict the supervisor wrote in response (kept verbatim, right after it)
+    is the durable record.
+
+    Only the last `keep_recent` payload-bearing user messages stay intact.
+    Older ones are truncated FROM THE MARKER ONWARD (any live-context prefix is
+    handled separately by strip_stale_live_context), provided the elided tail
+    exceeds `min_chars`. The stub does not contain the marker, so the pass is
+    idempotent and stubbed messages stop counting toward `keep_recent`.
+    Returns the original list object if nothing changed."""
+    if keep_recent < 0 or not messages:
+        return messages
+    payload_idx = [
+        i for i, m in enumerate(messages)
+        if m.get("role") == "user"
+        and isinstance(m.get("content"), str)
+        and SWEEP_PAYLOAD_MARKER in m["content"]
+    ]
+    stale = payload_idx[:-keep_recent] if keep_recent else payload_idx
+    if not stale:
+        return messages
+    out = list(messages)
+    changed = False
+    for i in stale:
+        content = out[i]["content"]
+        pos = content.index(SWEEP_PAYLOAD_MARKER)
+        if len(content) - pos <= min_chars:
+            continue
+        out[i] = {**out[i], "content": content[:pos] + SWEEP_PAYLOAD_ELIDED_STUB}
+        changed = True
     return out if changed else messages
 
 
