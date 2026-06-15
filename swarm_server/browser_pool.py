@@ -320,12 +320,11 @@ class TeamBrowserManager:
             return self._launch(team_id, headful=False)
 
     # -- human takeover (mode switch) --------------------------------------
-    def begin_takeover(self, team_id: str, display: Optional[str] = None) -> bool:
+    def begin_takeover(self, team_id: str) -> bool:
         """Put the team browser on the human's screen for a login: relaunch the
         same profile as a real visible window, opened on the page the agent was
         blocked on. Returns True if a window is now on screen, False if it
-        couldn't be shown (e.g. a headless host with no display). `display` is
-        accepted for backward-compat and ignored."""
+        couldn't be shown (e.g. a headless host with no display)."""
         self.ensure_team_browser(team_id)
         with self._lock:
             info = self._browsers.get(team_id)

@@ -449,44 +449,6 @@ SUPERVISOR_DEFAULT_SOUL = (
 # ---------------------------------------------------------------------------
 # Team-context builders
 # ---------------------------------------------------------------------------
-def _build_org_diagram(cfg: Dict[str, Any], team_id: str, current_agent: str) -> str:
-    """Build an ASCII org chart for all agents in the team."""
-    team_agents = {
-        name: a for name, a in cfg.get("agents", {}).items()
-        if a.get("team_id") == team_id
-    }
-    if not team_agents:
-        return "(no other team members)"
-
-    lines = []
-    for name, agent_cfg in sorted(team_agents.items()):
-        peers = agent_cfg.get("allowed_peers", [])
-        role = agent_cfg.get("role_soul", f"You are the {agent_cfg.get('name', name)}.").split('\n')[0]
-        is_you = " ← YOU" if name == current_agent else ""
-        peer_str = ", ".join(peers) if peers else "no links"
-        lines.append(f"  {name}: {role[:60]}{is_you}")
-        lines.append(f"    → links: {peer_str}")
-
-    return "\n".join(lines)
-
-
-def _build_team_members_list(cfg: Dict[str, Any], team_id: str) -> str:
-    """Build a list of all team members with their roles."""
-    team_agents = {
-        name: a for name, a in cfg.get("agents", {}).items()
-        if a.get("team_id") == team_id
-    }
-    if not team_agents:
-        return "(no other team members)"
-
-    lines = []
-    for name, agent_cfg in sorted(team_agents.items()):
-        role = agent_cfg.get("role_soul", f"You are the {agent_cfg.get('name', name)}.").split('\n')[0]
-        lines.append(f"  - {name}: {role}")
-
-    return "\n".join(lines)
-
-
 def _build_peer_roster(cfg: Dict[str, Any], team_id: str, current_agent: str) -> str:
     """Compact org context for ONE agent: only its directly-linked peers (with
     one-line roles) plus a one-line team-size summary.
@@ -838,9 +800,6 @@ _LEGACY_CTX_HEADERS = (
     "--- LIVE TEAM CONTEXT (auto-refreshed each turn) ---",
     "--- LIVE CONTEXT (auto-refreshed each turn) ---",
 )
-# The batch prompt that always follows the injected context (see
-# AgentDaemon._process_tasks_batch) — used as the end-anchor for legacy strips.
-_BATCH_HEADER_RE = None  # compiled lazily
 
 
 def strip_stale_live_context(text: str) -> str:

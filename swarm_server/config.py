@@ -545,9 +545,9 @@ DECISION_ROLLUP_TRIGGER = int(os.environ.get("SWARM_DECISION_ROLLUP_TRIGGER", "4
 #
 # Interval: per-agent `supervisor_interval_minutes` (agent settings), else
 # this default. The old token-threshold trigger (one peer at a time once it
-# accrued SUPERVISOR_TOKEN_THRESHOLD new tokens) is RETIRED — it was volume-
-# gated, single-peer, and silence-blind: an idle agent sitting on an open
-# delegation never generated tokens, so it was never reviewed.
+# accrued a set number of new tokens) is RETIRED — it was volume-gated,
+# single-peer, and silence-blind: an idle agent sitting on an open delegation
+# never generated tokens, so it was never reviewed.
 SUPERVISOR_SWEEP_INTERVAL_MINUTES = float(
     os.environ.get("SWARM_SUPERVISOR_SWEEP_MINUTES", "20"))
 # Total char budget for one sweep prompt, split across the peers that were
@@ -569,8 +569,6 @@ SUPERVISOR_SWEEP_MAX_IDLE_SKIPS = int(
     os.environ.get("SWARM_SUPERVISOR_SWEEP_MAX_IDLE_SKIPS", "3"))
 SUPERVISOR_SWEEP_FORCE_OPEN_AGE_SECONDS = int(
     os.environ.get("SWARM_SUPERVISOR_SWEEP_FORCE_OPEN_AGE_SECONDS", "7200"))
-# DEPRECATED — no longer read by the daemon; kept so old .env files don't error.
-SUPERVISOR_TOKEN_THRESHOLD = int(os.environ.get("SWARM_SUPERVISOR_TOKEN_THRESHOLD", "6000"))
 # Legacy single-review cap; still the default char_cap of _render_feed_transcript.
 SUPERVISOR_FEED_CHAR_CAP = int(os.environ.get("SWARM_SUPERVISOR_FEED_CHAR_CAP", "24000"))
 # SUPERVISOR_SWEEP_PROMPT and SUPERVISOR_DEFAULT_SOUL live in swarm_server/prompts.py.
