@@ -290,11 +290,6 @@ COMPRESSION_THRESHOLD = 0.75          # compact at ~75% of the window
 COMPRESSION_TARGET_RATIO = 0.20      # summary budget as a fraction of compacted content
 COMPRESSION_PROTECT_FIRST_N = 3      # head turns kept verbatim (besides system prompt)
 COMPRESSION_PROTECT_LAST_N = 12      # recent tail turns kept verbatim
-# Hard backstop: force compaction once a session exceeds this many messages,
-# even if the token estimate hasn't crossed the threshold. Stops a session from
-# accumulating hundreds of small turns that never trip the token check.
-COMPRESSION_HYGIENE_HARD_MESSAGE_LIMIT = 400
-
 # ---------------------------------------------------------------------------
 # Autonomous 24/7 operation
 # ---------------------------------------------------------------------------
@@ -741,7 +736,10 @@ def write_agent_hermes_config(
         "target_ratio": COMPRESSION_TARGET_RATIO,
         "protect_first_n": COMPRESSION_PROTECT_FIRST_N,
         "protect_last_n": COMPRESSION_PROTECT_LAST_N,
-        "hygiene_hard_message_limit": COMPRESSION_HYGIENE_HARD_MESSAGE_LIMIT,
+        # NB: no hygiene_hard_message_limit — Hermes (0.15.2 + 0.16.0) reads no
+        # such key; the "force compaction after N messages" backstop it implied
+        # never existed. Hermes compacts on token estimate only. Re-add a real
+        # message-count backstop here ONLY if Hermes grows config support for it.
         "abort_on_summary_failure": False,
     }
 
