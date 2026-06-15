@@ -168,6 +168,13 @@ button.msg-header, button.cc-divider, button.exec-label { width: 100%; }
 @keyframes pop-badge { 50%{ transform: scale(1.3); background: var(--accent); color: var(--accent-ink); border-color: var(--accent); } }
 .peer-tag { font-size: 9.5px; font-weight: 500; background: var(--accent-soft); color: var(--text-secondary); padding: 2px 7px; border-radius: var(--r-sm); }
 .peer-tag.empty { background: rgba(142,142,150,0.1); color: var(--text-muted); }
+/* Agent card — compact, info-dense layout */
+.an-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.an-status { font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; flex-shrink: 0; }
+.card-sub { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+.cflag { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; color: var(--text-muted); background: var(--accent-soft); padding: 2px 6px; border-radius: var(--r-sm); line-height: 1.4; }
+.cflag.mono { font-family: var(--font-mono); font-size: 9.5px; }
+.queue-badge.q-zero { color: var(--text-muted); opacity: 0.65; }
 .queue-viz { background: transparent; }
 .queue-bar-row { display: flex; align-items: center; gap: 9px; margin-bottom: 6px; }
 .queue-bar-label { width: 88px; font-size: 11px; color: var(--text-muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
@@ -810,6 +817,40 @@ button.msg-header, button.cc-divider, button.exec-label { width: 100%; }
     </div>
 </div>
 
+<!-- File Preview Modal (click a workspace file to preview it in an overlay) -->
+<div class="modal-bg" id="modal-file-preview">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mh-file" style="max-width:860px;width:90vw">
+        <div class="modal-header" id="mh-file" style="display:flex;align-items:center;gap:10px">
+            <span id="file-preview-name" style="font-family:var(--font-mono);font-size:12px;word-break:break-all">file</span>
+            <span id="file-preview-size" style="font-size:11px;color:var(--text-muted);margin-left:auto;white-space:nowrap"></span>
+        </div>
+        <div class="modal-body">
+            <pre id="file-preview-body" style="margin:0;max-height:64vh;overflow:auto;white-space:pre-wrap;word-break:break-word;font-size:12px">Loading…</pre>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="openWorkspaceOnHost(true)" title="Open the containing folder on the server host's desktop">Reveal in folder</button>
+            <button class="btn btn-secondary" onclick="openWorkspaceOnHost(false)" title="Open with the server host's default app">Open in default app</button>
+            <button class="btn" onclick="hideModal('modal-file-preview')">Close</button>
+            <input type="hidden" id="file-preview-path">
+        </div>
+    </div>
+</div>
+
+<!-- Task Queue Modal (click a queue bar to see that agent's queued/in-flight tasks) -->
+<div class="modal-bg" id="modal-tasks">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mh-tasks" style="max-width:680px">
+        <div class="modal-header" id="mh-tasks">Tasks: <span id="tasks-agent-name"></span></div>
+        <div class="modal-body">
+            <div id="tasks-list" style="max-height:60vh;overflow:auto"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="showTasks(document.getElementById('tasks-agent').value)" title="Reload">Refresh</button>
+            <button class="btn" onclick="hideModal('modal-tasks')">Close</button>
+            <input type="hidden" id="tasks-agent">
+        </div>
+    </div>
+</div>
+
 <script>
 const WS_URL = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
 const API_URL = `${window.location.protocol}//${window.location.host}`;
@@ -1225,19 +1266,30 @@ function renderAgents() {
             : '<span class="peer-tag empty">no links</span>';
         const tm = a.telemetry || {};
         const ctxPct = tm.context_pct != null ? tm.context_pct : null;
+        const ctxColor = ctxPct == null ? '' : ctxPct > 85 ? 'var(--danger)' : ctxPct > 60 ? 'var(--busy)' : 'var(--idle)';
         const ctxBar = ctxPct != null
-            ? `<div class="card-ctx" title="Context ${ctxPct}% of ${(tm.context_window||0).toLocaleString()} tokens"><div class="card-ctx-fill" style="width:${Math.min(ctxPct,100)}%;background:${ctxPct>85?'var(--danger)':ctxPct>60?'var(--busy)':'var(--idle)'}"></div></div>`
+            ? `<div class="card-ctx" title="Context ${ctxPct}% of ${(tm.context_window||0).toLocaleString()} tokens"><div class="card-ctx-fill" style="width:${Math.min(ctxPct,100)}%;background:${ctxColor}"></div></div>`
             : '';
         const cr = (a.config?.crons || []).filter(c => c.enabled !== false).length;
-        const chips = `<span class="peer-tag" style="font-family:var(--font-mono);font-size:9px" title="Model">${esc(a.config?.model || 'litellm-model')}</span>${a.config?.autonomous ? '<span class="peer-tag" style="background:rgba(245,181,68,0.16);color:var(--busy)" title="Self-drives when idle">auto</span>' : ''}${a.config?.is_supervisor ? `<span class="peer-tag" style="background:rgba(91,157,255,0.16);color:var(--human)" title="Supervisor — watches its linked agents">${icon('eye', 10)}</span>` : ''}${cr ? `<span class="peer-tag" style="background:rgba(62,207,142,0.14);color:var(--idle)" title="${cr} scheduled wake-up(s)">${icon('clock', 10)} ${cr}</span>` : ''}`;
-        const qBadge = `<span class="queue-badge${(a.pending_count||0)>0?'':' q-zero'}" style="margin-left:auto" title="Queued tasks">${a.pending_count || 0}</span>`;
+        // Always-visible status word + the most useful at-a-glance facts.
+        const stLabel = st === 'busy' ? 'working' : st === 'asking_human' ? 'asking' : st === 'paused' ? 'paused' : 'idle';
+        const stColor = st === 'busy' ? 'var(--busy)' : st === 'asking_human' ? 'var(--human)' : st === 'paused' ? 'var(--danger)' : 'var(--idle)';
+        const sub = [
+            `<span class="cflag mono" title="Model">${esc(a.config?.model || 'default')}</span>`,
+            ctxPct != null ? `<span class="cflag" style="color:${ctxColor}" title="Context window used (${(tm.context_window||0).toLocaleString()} tokens)">ctx ${ctxPct}%</span>` : '',
+            a.config?.is_supervisor ? `<span class="cflag" style="color:var(--human)" title="Supervisor — watches its linked agents">${icon('eye', 10)} overseer</span>` : '',
+            a.config?.autonomous ? `<span class="cflag" style="color:var(--busy)" title="Self-drives when idle">auto</span>` : '',
+            cr ? `<span class="cflag" style="color:var(--idle)" title="${cr} scheduled wake-up(s)">${icon('clock', 10)} ${cr}</span>` : '',
+            `<span class="cflag" title="Linked peers">${icon('link', 10)} ${peers.length}</span>`,
+        ].filter(Boolean).join('');
+        const qBadge = `<span class="queue-badge${(a.pending_count||0)>0?'':' q-zero'}" title="Queued tasks">${a.pending_count || 0}</span>`;
         return `<div class="agent-card ${st} ${sel?'selected':''} ${(sel||denseMode)?'expanded':''}" role="button" tabindex="0" onclick="selectAgent('${jsAttr(n)}')" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();selectAgent('${jsAttr(n)}')}">
-            <div class="agent-name"><span class="status-dot ${st}"></span><span class="an-text">${esc(a.config?.name || n)}</span>${qBadge}</div>
-            <div class="agent-meta">${chips}</div>
+            <div class="agent-name"><span class="status-dot ${st}"></span><span class="an-text">${esc(a.config?.name || n)}</span><span class="an-status" style="color:${stColor}">${stLabel}</span>${qBadge}</div>
+            <div class="card-sub">${sub}</div>
             ${ctxBar}
+            ${renderCardDigest(a.digest)}
             <div class="card-detail">
-                ${renderCardDigest(a.digest)}
-                <div class="agent-meta" style="margin-top:6px">${peerTags}</div>
+                <div class="agent-meta" style="margin-top:2px">${peerTags}</div>
                 <div class="agent-actions">
                     ${(st === 'busy' || st === 'asking_human') ? `<button class="btn btn-sm btn-danger" onclick="event.stopPropagation();stopAgent('${jsAttr(n)}')">${icon('square', 10)} Stop</button>` : ''}
                     ${st === 'paused'
@@ -1335,8 +1387,11 @@ function renderNetwork() {
         <marker id="arrowW" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#5B9DFF"/></marker>
       </defs>`;
 
-    // --- Edge drawing helper: trims to the node box edge, bows curves clear of nodes
-    const addEdge = (a, b, cls, color, width, opacity, dash, arrow, curve) => {
+    // --- Edge drawing helper: trims to the node box edge. Lines are STRAIGHT by
+    // default and only bow when the straight segment would run through (or graze)
+    // a third node's box — then it arcs to the opposite side, just enough to clear.
+    const nodeNames = Object.keys(pos);
+    const addEdge = (a, b, cls, color, width, opacity, dash, arrow) => {
         const pa = pos[a], pb = pos[b]; if (!pa || !pb) return;
         const dx = pb.x-pa.x, dy = pb.y-pa.y, l = Math.hypot(dx,dy) || 1;
         // distance from box center to its border along the edge direction
@@ -1346,16 +1401,29 @@ function renderNetwork() {
             l/2 - 2);
         const ax = pa.x + dx/l*trim, ay = pa.y + dy/l*trim;
         const bx = pb.x - dx/l*(trim + (arrow?3:0)), by = pb.y - dy/l*(trim + (arrow?3:0));
-        let d;
-        if (curve) {
-            const mx = (ax+bx)/2, my = (ay+by)/2;
-            let cx, cy;
-            if (Math.abs(dy) < 8) {                      // same row -> bow downward, more for longer spans
-                cx = mx; cy = my + Math.min(78, Math.abs(dx)*0.5 + 26);
-            } else {                                     // perpendicular arc
-                const off = Math.min(70, l*0.30);
-                cx = mx + (-dy/l)*off; cy = my + (dx/l)*off;
+        // Obstruction test: find the non-endpoint node sitting closest to the
+        // straight segment (only those projecting onto its mid-span count, so
+        // neighbours flush against an endpoint don't force a needless curve).
+        const segdx = bx-ax, segdy = by-ay, segl = Math.hypot(segdx,segdy) || 1;
+        const nx = -segdy/segl, ny = segdx/segl;     // unit normal to the segment
+        const clear = HH + 16;                       // node half-height + margin
+        let bow = 0, worst = 0;
+        for (const n of nodeNames) {
+            if (n === a || n === b) continue;
+            const p = pos[n];
+            const t = ((p.x-ax)*segdx + (p.y-ay)*segdy) / (segl*segl);
+            if (t < 0.1 || t > 0.9) continue;        // ignore near-endpoint nodes
+            const perp = (p.x-ax)*nx + (p.y-ay)*ny;  // signed dist. along the normal
+            const sev = clear - Math.abs(perp);
+            if (sev > worst) {                       // closest intruder wins
+                worst = sev;
+                bow = (perp >= 0 ? -1 : 1) * (sev + 18);   // arc to the clear side
             }
+        }
+        let d;
+        if (bow !== 0) {
+            const mx = (ax+bx)/2, my = (ay+by)/2;
+            const cx = mx + nx*bow, cy = my + ny*bow;
             d = `M${ax},${ay} Q${cx.toFixed(1)},${cy.toFixed(1)} ${bx},${by}`;
         } else {
             d = `M${ax},${ay} L${bx},${by}`;
@@ -1386,9 +1454,9 @@ function renderNetwork() {
     });
 
     // Peers (and stray one-way links) underneath; supervision arrows on top.
-    peer.forEach(([a,b]) => addEdge(a,b,'peer','#6B6B74',1.7,0.7,null,null,true));
-    oneway.forEach(([a,b]) => addEdge(a,b,'oneway','#6B6B74',1.4,0.5,'2 4','arrowP',true));
-    supervise.forEach(([s,w]) => addEdge(s,w,'watch','#5B9DFF',1.6,0.6,'5 4','arrowW',true));
+    peer.forEach(([a,b]) => addEdge(a,b,'peer','#6B6B74',1.7,0.7,null,null));
+    oneway.forEach(([a,b]) => addEdge(a,b,'oneway','#6B6B74',1.4,0.5,'2 4','arrowP'));
+    supervise.forEach(([s,w]) => addEdge(s,w,'watch','#5B9DFF',1.6,0.6,'5 4','arrowW'));
 
     // --- Nodes -------------------------------------------------------------
     names.forEach(n => {
@@ -1467,8 +1535,46 @@ function renderQueues() {
         const color = q>0 ? 'var(--accent)' : 'var(--idle)';
         // Delivery is event-driven now, so there's no countdown — show live state.
         const timerText = a.state === 'busy' ? 'working' : (a.state === 'asking_human' ? 'asking' : '');
-        return `<div class="queue-bar-row"><div class="queue-bar-label">${esc(n)}</div><div class="queue-bar-track"><div class="queue-bar-fill" style="width:${pct}%;background:${color}"></div></div><div style="font-size:10px;color:var(--text-muted);min-width:36px;text-align:right">${timerText}</div><div class="queue-bar-count">${q}</div></div>`;
+        return `<div class="queue-bar-row" role="button" tabindex="0" style="cursor:pointer" title="View this agent's tasks" onclick="showTasks('${jsAttr(n)}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showTasks('${jsAttr(n)}')}"><div class="queue-bar-label">${esc(n)}</div><div class="queue-bar-track"><div class="queue-bar-fill" style="width:${pct}%;background:${color}"></div></div><div style="font-size:10px;color:var(--text-muted);min-width:36px;text-align:right">${timerText}</div><div class="queue-bar-count">${q}</div></div>`;
     }).join('');
+}
+
+/* Task-queue drill-down: list an agent's queued / in-flight / recent tasks.
+   Backed by GET /monitoring/agents/{name}/queue (newest first, status-tagged). */
+const _TASK_STATUS = {
+    pending: { label: 'queued', color: 'var(--accent)' },
+    processing: { label: 'in flight', color: 'var(--busy)' },
+    done: { label: 'done', color: 'var(--idle)' },
+    failed: { label: 'failed', color: 'var(--danger,#e5534b)' },
+};
+async function showTasks(name) {
+    if (!name) return;
+    document.getElementById('tasks-agent').value = name;
+    document.getElementById('tasks-agent-name').textContent = agentData[name]?.config?.name || name;
+    const list = document.getElementById('tasks-list');
+    list.innerHTML = '<div style="padding:14px;color:var(--text-muted);font-size:12px">Loading…</div>';
+    showModal('modal-tasks');
+    try {
+        const res = await fetch(`${API_URL}/monitoring/agents/${encodeURIComponent(name)}/queue`);
+        const d = await res.json();
+        const tasks = d.tasks || [];
+        if (!tasks.length) { list.innerHTML = '<div style="padding:14px;color:var(--text-muted);font-size:12px">No tasks in this queue.</div>'; return; }
+        list.innerHTML = tasks.map(t => {
+            const s = _TASK_STATUS[t.status] || { label: t.status || '?', color: 'var(--text-muted)' };
+            const when = t.created_at ? new Date(t.created_at * 1000).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : '';
+            const retries = (t.retries || 0) > 0 ? ` · retried ${t.retries}×` : '';
+            return `<div style="border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin-bottom:6px;background:var(--bg)">
+                <div style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text-muted);margin-bottom:5px">
+                    <span style="color:${s.color};font-weight:600;text-transform:uppercase;letter-spacing:.04em">${esc(s.label)}</span>
+                    <span>from ${esc(t.from_agent || '—')}</span>
+                    <span style="margin-left:auto">${esc(when)}${retries}</span>
+                </div>
+                <pre style="margin:0;white-space:pre-wrap;word-break:break-word;font-size:11.5px;max-height:160px;overflow:auto">${esc(t.payload || '')}</pre>
+            </div>`;
+        }).join('');
+    } catch (e) {
+        list.innerHTML = `<div style="padding:14px;color:var(--danger,#e5534b);font-size:12px">Could not load tasks: ${esc(e.message)}</div>`;
+    }
 }
 
 function addMessageToUI(msg) {
@@ -2395,7 +2501,10 @@ async function loadTeams() {
         teamsCache = data.teams || [];
         sel.innerHTML = teamsCache.map(t => `<option value="${escAttr(t.id)}">${esc(t.name)} (${t.agent_count})</option>`).join('');
         if (!currentTeam && teamsCache.length) {
-            currentTeam = teamsCache[0].id;
+            // Land on the last team the operator was viewing (survives a refresh),
+            // falling back to the first team if that one no longer exists.
+            const last = localStorage.getItem('swarm_last_team');
+            currentTeam = (last && teamsCache.some(t => t.id === last)) ? last : teamsCache[0].id;
             sel.value = currentTeam;
         }
         refreshData();
@@ -2406,6 +2515,7 @@ async function loadTeams() {
 
 function changeTeam(teamId) {
     currentTeam = teamId;
+    try { localStorage.setItem('swarm_last_team', teamId || ''); } catch (e) {}
     selectedAgent = null;
     agentData = {};
     teamBudget = {};               // clear the previous team's banner immediately
@@ -2456,24 +2566,42 @@ function renderWorkspaceList(d) {
     body.innerHTML = html;
     hydrateIcons(body);
 }
+/* Open the host's desktop opener for the previewed file (reveal=folder, else
+   the file in its default app). Only works when server & operator share a box. */
+async function openWorkspaceOnHost(reveal) {
+    const path = document.getElementById('file-preview-path').value;
+    if (!path || !currentTeam) return;
+    try {
+        const res = await fetch(`${API_URL}/teams/${encodeURIComponent(currentTeam)}/workspace/open`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ path, reveal: !!reveal }),
+        });
+        const d = await res.json();
+        if (d.error) { logEvent('error', d.error); return; }
+        logEvent('system', `${reveal ? 'Revealed' : 'Opened'} ${path} on the server host`);
+    } catch (e) { logEvent('error', e.message); }
+}
+
 async function openWorkspaceFile(path) {
-    const body = document.getElementById('workspace-body');
-    if (!body || !currentTeam) return;
+    if (!currentTeam) return;
     const team = currentTeam;
-    const head = `<div class="ws-fileview-head"><span class="ws-back" onclick="renderWorkspaceList()">← Files</span><span class="ws-fname" title="${escAttr(path)}">${esc(path)}</span></div>`;
-    body.innerHTML = `<div class="ws-fileview">${head}<pre>Loading…</pre></div>`;
+    document.getElementById('file-preview-path').value = path;
+    document.getElementById('file-preview-name').textContent = path;
+    document.getElementById('file-preview-size').textContent = '';
+    const pre = document.getElementById('file-preview-body');
+    pre.textContent = 'Loading…';
+    showModal('modal-file-preview');
     try {
         const res = await fetch(`${API_URL}/teams/${encodeURIComponent(team)}/workspace/file?path=${encodeURIComponent(path)}`);
         const d = await res.json();
-        if (currentTeam !== team) return;
-        let inner;
-        if (d.error) inner = esc(d.error);
-        else if (d.too_large) inner = `File is too large to preview (${_fmtBytes(d.size)}).`;
-        else if (d.binary) inner = `Binary file (${_fmtBytes(d.size)}) — preview not available.`;
-        else inner = esc(d.content || '');
-        body.innerHTML = `<div class="ws-fileview">${head}<pre>${inner}</pre></div>`;
+        if (currentTeam !== team) return;            // team switched while loading
+        document.getElementById('file-preview-size').textContent = d.size != null ? _fmtBytes(d.size) : '';
+        if (d.error) pre.textContent = d.error;
+        else if (d.too_large) pre.textContent = `File is too large to preview (${_fmtBytes(d.size)}). Use “Open in default app”.`;
+        else if (d.binary) pre.textContent = `Binary file (${_fmtBytes(d.size)}) — preview not available. Use “Open in default app”.`;
+        else pre.textContent = d.content || '';
     } catch (e) {
-        if (currentTeam === team) body.innerHTML = `<div class="ws-fileview">${head}<pre>Could not open file.</pre></div>`;
+        pre.textContent = 'Could not open file.';
     }
 }
 

@@ -137,6 +137,47 @@ def test_overview_and_get_team(swarm):
 
 
 # ---------------------------------------------------------------------------
+# Structural guard: every team must have exactly one supervisor
+# ---------------------------------------------------------------------------
+def test_get_team_warns_when_no_supervisor(swarm):
+    _call(master._master_create_team_handler, {"team_id": "acme", "name": "Acme"})
+    _call(master._master_create_agent_handler, {
+        "team_id": "acme", "agent_name": "lead", "display_name": "Lead",
+        "role_soul": "You are the Lead.",
+    })
+    gt = _call(master._master_get_team_handler, {"team_id": "acme"})
+    assert gt["success"]
+    assert gt["warnings"], "a team with no supervisor must be flagged"
+    assert "supervisor" in gt["warnings"][0].lower()
+
+
+def test_get_team_no_warning_with_one_supervisor(swarm):
+    _call(master._master_create_team_handler, {"team_id": "acme", "name": "Acme"})
+    _call(master._master_create_agent_handler, {
+        "team_id": "acme", "agent_name": "lead", "display_name": "Lead",
+        "role_soul": "You are the Lead.",
+    })
+    _call(master._master_create_agent_handler, {
+        "team_id": "acme", "agent_name": "boss", "display_name": "Overseer",
+        "role_soul": "You watch the team.", "is_supervisor": True,
+        "allowed_peers": ["lead"],
+    })
+    gt = _call(master._master_get_team_handler, {"team_id": "acme"})
+    assert gt["warnings"] == []
+
+
+def test_get_team_warns_on_multiple_supervisors(swarm):
+    _call(master._master_create_team_handler, {"team_id": "acme", "name": "Acme"})
+    for nm in ("boss1", "boss2"):
+        _call(master._master_create_agent_handler, {
+            "team_id": "acme", "agent_name": nm, "display_name": nm,
+            "role_soul": "You watch.", "is_supervisor": True,
+        })
+    gt = _call(master._master_get_team_handler, {"team_id": "acme"})
+    assert gt["warnings"] and "2 supervisors" in gt["warnings"][0]
+
+
+# ---------------------------------------------------------------------------
 # Files: write / read / list + path safety
 # ---------------------------------------------------------------------------
 def test_file_write_read_list(swarm):

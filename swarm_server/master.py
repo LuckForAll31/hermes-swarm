@@ -159,8 +159,11 @@ autonomous Hermes LLM with:
     (founder/manager) is usually right; avoid a fully-connected mesh.
   - is_supervisor: a supervisor receives automated periodic SWEEPS of everything
     its linked agents did, and nudges/redirects them. It does not do the work.
-    Give a team ONE supervisor (often an "overseer"/"manager") linked to all
-    workers. Supervisors have a sensible default soul if you don't supply one.
+    EVERY team MUST have exactly ONE supervisor (an "overseer"/"manager") linked
+    to all workers — this is non-negotiable, never ship a team without one. It is
+    the only agent that watches the whole team for stalls, drift, and runaway
+    crons, so a team without it has no self-correction. Supervisors have a
+    sensible default soul if you don't supply one.
   - autonomous: when true, the agent self-drives the mission when its queue is
     idle (heartbeat). Recommend EXACTLY ONE autonomous driver per team (the
     lead) so the team has a single engine; workers are reactive (autonomous off)
@@ -204,7 +207,8 @@ autonomous driver, and don't create more agents than the goal needs. A focused
    mind. Don't over-ask — once you understand the goal, move on.
 2. PROPOSE a concrete plan in chat BEFORE building: the team name, each agent
    (name, one-line role, supervisor/autonomous flags), the link topology, and a
-   draft of workspace.md. Let the human correct it.
+   draft of workspace.md. EVERY proposal must include exactly one supervisor —
+   if you forgot one, add it before proposing. Let the human correct it.
 3. BUILD only after the human approves. Use the tools: create the team, create
    each agent with its full soul, set the links, write workspace.md and any seed
    files. Create the supervisor LAST (after the agents it watches exist) and link
@@ -367,6 +371,26 @@ def _agent_brief(name: str, a: dict) -> dict:
     }
 
 
+def _supervisor_warnings(cfg: dict, team_id: str) -> List[str]:
+    """Structural check: every team must have exactly one supervisor. Returns
+    human-readable warnings (empty when the team is well-formed) so the Architect
+    can't silently ship a team with no overseer — surfaced at VERIFY and kickoff."""
+    members = [a for n, a in (cfg.get("agents") or {}).items()
+               if a.get("team_id") == team_id]
+    sups = [a for a in members if a.get("is_supervisor")]
+    warns: List[str] = []
+    if members and not sups:
+        warns.append(
+            "This team has NO supervisor. Every team must have exactly one "
+            "supervisor linked to all workers — create one (is_supervisor=true) "
+            "and link it before kicking the team off.")
+    elif len(sups) > 1:
+        warns.append(
+            f"This team has {len(sups)} supervisors. Keep exactly one — extra "
+            "supervisors duplicate sweeps and waste tokens.")
+    return warns
+
+
 def _read_workspace_md(team_id: str) -> str:
     from swarm_server.config import _get_team_workspace_path
 
@@ -445,6 +469,7 @@ def _master_get_team_handler(args: dict, **kwargs) -> str:
         team_id=team_id,
         name=cfg["teams"][team_id].get("name"),
         agents=agents,
+        warnings=_supervisor_warnings(cfg, team_id),
         workspace_md=_read_workspace_md(team_id),
         workspace_files=_file_tree(_get_team_workspace_path(team_id)),
         project_files=_file_tree(_get_project_dir(team_id, cfg)),
@@ -676,7 +701,19 @@ def _master_send_task_handler(args: dict, **kwargs) -> str:
     except Exception as e:  # noqa: BLE001
         return _err(f"could not enqueue task: {e}")
     log.info("[master] sent kickoff task to '%s'", agent_name)
-    return _ok(agent_name=agent_name, task_id=task_id)
+    # Structural nudge: if the kicked-off team has no supervisor, surface it now
+    # (the task still goes through — this is a visible reminder, not a block).
+    warnings: List[str] = []
+    try:
+        from swarm_server.config import load_agents_config
+
+        cfg = load_agents_config()
+        team_id = (cfg.get("agents", {}).get(agent_name, {}) or {}).get("team_id")
+        if team_id:
+            warnings = _supervisor_warnings(cfg, team_id)
+    except Exception:  # noqa: BLE001
+        pass
+    return _ok(agent_name=agent_name, task_id=task_id, warnings=warnings)
 
 
 def _master_delete_agent_handler(args: dict, **kwargs) -> str:

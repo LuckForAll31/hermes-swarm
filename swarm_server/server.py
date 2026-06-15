@@ -760,6 +760,63 @@ async def get_team_workspace_file(team_id: str, path: str):
     return JSONResponse({"path": path, "size": size, "content": content})
 
 
+@app.post("/teams/{team_id}/workspace/open")
+async def open_team_workspace_file(team_id: str, request: Request):
+    """Open a workspace file (or reveal its folder) in the SERVER host's desktop.
+
+    Only meaningful when the dashboard and server share a machine (the common
+    local single-operator setup) — on a headless VPS there is no desktop and this
+    returns a clear error. Path-traversal safe like the file reader; spawns the
+    platform opener detached so the request never blocks."""
+    import os
+    import platform
+    import shutil
+    import subprocess
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    path = (body.get("path") or "").strip()
+    reveal = bool(body.get("reveal"))
+    if not path:
+        return JSONResponse({"error": "path is required."}, status_code=400)
+
+    root, err = _resolve_project_dir(team_id)
+    if err:
+        return err
+    target = (root / path).resolve()
+    try:
+        target.relative_to(root)
+    except ValueError:
+        return JSONResponse({"error": "Path escapes the workspace."}, status_code=400)
+    if not target.exists():
+        return JSONResponse({"error": "File not found."}, status_code=404)
+
+    # When revealing, open the containing folder; otherwise open the file itself.
+    what = target.parent if reveal else target
+    system = platform.system()
+    try:
+        if system == "Darwin":
+            opener = ["open"]
+        elif system == "Windows":
+            opener = ["cmd", "/c", "start", ""]
+        else:  # Linux / *nix
+            if not shutil.which("xdg-open"):
+                return JSONResponse(
+                    {"error": "No desktop opener available (xdg-open not found). "
+                              "This action only works when the server runs on a "
+                              "machine with a desktop."}, status_code=501)
+            opener = ["xdg-open"]
+        subprocess.Popen(
+            opener + [str(what)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True)
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"error": f"Could not open: {e}"}, status_code=500)
+    return JSONResponse({"ok": True, "opened": str(what), "reveal": reveal})
+
+
 # ---------------------------------------------------------------------------
 # Team costs — REAL provider token counts (token_usage events), priced with
 # the swarm-side map. LiteLLM's Postgres SpendLogs stay the billing ground
