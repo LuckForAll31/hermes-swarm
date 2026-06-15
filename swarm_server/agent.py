@@ -618,6 +618,12 @@ class AgentDaemon:
 
                 eff = resolve_model(self.cfg)
                 model = eff["model"]
+                if not model:
+                    raise RuntimeError(
+                        f"No model configured for agent '{self.name}'. Run `hermes setup` "
+                        "to pick a provider + model (the swarm reads ~/.hermes), set a "
+                        "per-agent model in the dashboard, or set SWARM_LLM_* for a proxy."
+                    )
                 self._current_model = model
                 _eff_base = eff["base_url"] or None
                 _eff_key = eff["api_key"] or None

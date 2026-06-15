@@ -13,15 +13,18 @@ team that works on its own and asks you for help when it needs it.
 
 ## 1. What you need first
 
-1. **An OpenAI-compatible LLM endpoint + API key.** Any of these works:
-   - [OpenRouter](https://openrouter.ai) — easiest, one key for many models.
-   - OpenAI directly (`https://api.openai.com/v1`).
-   - Your own [LiteLLM](https://github.com/BerriAI/litellm) proxy (lets you mix
-     providers and track spend in one place).
+1. **An LLM provider API key.** You'll configure it with **`hermes setup`** —
+   Hermes' built-in wizard. It supports 40+ providers (Anthropic, OpenAI,
+   [OpenRouter](https://openrouter.ai), Groq, DeepSeek, local models, …): pick
+   one, paste your key, choose a model. The swarm reads that config directly, so
+   there's nothing provider-specific to wire up separately. *(Prefer to send the
+   whole swarm through one [LiteLLM](https://github.com/BerriAI/litellm) /
+   OpenAI-compatible proxy instead? That path uses the `SWARM_LLM_*` env vars —
+   noted below.)*
 2. **Docker** *(recommended)* **or Python 3.11+**.
 
 You do **not** need to install Hermes (the agent runtime) separately — it's
-pulled in automatically.
+pulled in automatically, and the `hermes` CLI comes with it.
 
 ---
 
@@ -34,55 +37,49 @@ agents *inside* the container (which keeps their terminal access off your host).
 
 ```bash
 git clone <this-repo> hermes-swarm && cd hermes-swarm
-cp .env.example .env
-```
-
-Open `.env` and set at least:
-
-```bash
-SWARM_LLM_BASE_URL=https://openrouter.ai/api/v1   # your endpoint
-SWARM_LLM_API_KEY=sk-...                            # your key
-SWARM_DEFAULT_MODEL=openai/gpt-4o-mini             # a model that endpoint serves
-```
-
-Then:
-
-```bash
 docker compose up --build
+```
+
+Configure your provider with Hermes' wizard (written to the shared config on the
+data volume, so it persists and becomes the swarm default):
+
+```bash
+docker compose run --rm -e HERMES_HOME=/data/.hermes-shared swarm hermes setup
 ```
 
 Open **http://127.0.0.1:8000**. Your data persists in the `swarm-data` Docker
 volume across restarts.
 
-> Running an LLM proxy on your **host** (e.g. LiteLLM on :4000)? From inside the
-> container use `SWARM_LLM_BASE_URL=http://host.docker.internal:4000/v1`.
+> Prefer one OpenAI-compatible / LiteLLM proxy for the whole swarm (e.g. LiteLLM
+> on your host's :4000)? Skip `hermes setup`; instead `cp .env.example .env` and
+> set `SWARM_LLM_BASE_URL=http://host.docker.internal:4000/v1` +
+> `SWARM_LLM_API_KEY` + `SWARM_DEFAULT_MODEL`.
 
 ### Option B — pip + virtualenv
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate     # Python 3.11+
-pip install .                                          # pulls hermes-agent + deps
+pip install .                                          # pulls hermes-agent (+ the hermes CLI) + deps
 playwright install chromium                            # for the browser tools
 
-export SWARM_LLM_BASE_URL=https://openrouter.ai/api/v1
-export SWARM_LLM_API_KEY=sk-...
-export SWARM_DEFAULT_MODEL=openai/gpt-4o-mini
+hermes setup            # pick provider + key + model (saved in ~/.hermes)
 
-hermes-swarm doctor     # verify Hermes + LLM backend + Chromium are all good
+hermes-swarm doctor     # verify Hermes + your model + Chromium are all good
 hermes-swarm up         # serve the dashboard on http://127.0.0.1:8000
 ```
 
 `hermes-swarm doctor` is the fastest way to diagnose a bad install — it checks
-that Hermes imports, your LLM endpoint answers, and Chromium is available, and
-tells you exactly what to fix.
+that Hermes imports, that a model is configured (and reachable), and that
+Chromium is available, and tells you exactly what to fix.
 
 ---
 
 ## 3. First run
 
-Open the dashboard. The first time, it walks you through choosing a **default
-model** (the one new agents use unless you override per-agent). This is read
-live from your LLM endpoint's model list; pick one and save.
+Open the dashboard. The **default model** (the one new agents use unless you
+override per-agent) is whatever you picked in `hermes setup`. You can change it
+anytime from the dashboard — it reads the available models live and writes your
+choice back to the same Hermes config.
 
 You now have an empty swarm. There are two ways to build your first team — let
 the **Architect** do it for you (recommended), or wire it by hand.

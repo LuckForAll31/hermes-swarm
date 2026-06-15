@@ -29,7 +29,18 @@ def cmd_up(args) -> int:
     log.info("=" * 60)
     log.info("  Hermes Swarm Server")
     log.info("  Dashboard:    http://%s:%s/", SERVER_HOST, SERVER_PORT)
-    log.info("  LLM backend:  %s", LITELLM_API_BASE)
+    try:
+        from swarm_server.model_config import resolve_model, is_model_configured
+
+        if is_model_configured():
+            eff = resolve_model()
+            log.info("  Model:        %s  (provider %s)", eff.get("model"),
+                     eff.get("display_provider") or eff.get("provider"))
+        else:
+            log.warning("  Model:        none configured — run `hermes setup` (or set SWARM_LLM_*)")
+    except Exception as e:  # never let a config probe block server start
+        log.info("  LLM backend:  %s", LITELLM_API_BASE)
+        log.debug("startup model resolve failed: %s", e)
     log.info("=" * 60)
     uvicorn.run(
         "swarm_server.server:app",
@@ -46,7 +57,7 @@ def cmd_doctor(args) -> int:
     ok = True
 
     # 1) Hermes importable
-    from swarm_server.config import ensure_hermes_importable, LITELLM_API_BASE, LLM_API_KEY, DEFAULT_MODEL
+    from swarm_server.config import ensure_hermes_importable, LLM_API_KEY
 
     ensure_hermes_importable()
     try:
@@ -58,25 +69,52 @@ def cmd_doctor(args) -> int:
         print(f"✗ Hermes agent NOT importable: {e}")
         print("   → pip install hermes-agent   (or set HERMES_AGENT_PATH)")
 
-    # 2) Model backend reachable
-    try:
-        import urllib.request
+    # 2) Provider configured (via Hermes) + backend reachable
+    from swarm_server.model_config import resolve_model, is_model_configured
 
-        req = urllib.request.Request(
-            f"{LITELLM_API_BASE}/models", headers={"Authorization": f"Bearer {LLM_API_KEY}"}
-        )
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            import json as _json
-
-            data = _json.loads(resp.read().decode("utf-8"))
-        ids = [m.get("id") for m in data.get("data", []) if m.get("id")]
-        print(f"✓ LLM backend reachable at {LITELLM_API_BASE} — models: {ids or '(none listed)'}")
-        if DEFAULT_MODEL not in ids:
-            print(f"   ⚠ default model '{DEFAULT_MODEL}' not in the served list — set SWARM_DEFAULT_MODEL")
-    except Exception as e:
+    if not is_model_configured():
         ok = False
-        print(f"✗ LLM backend NOT reachable at {LITELLM_API_BASE}: {e}")
-        print("   → set SWARM_LLM_BASE_URL + SWARM_LLM_API_KEY to an OpenAI-compatible endpoint")
+        print("✗ No model configured.")
+        print("   → run `hermes setup`   (pick a provider + key + model — Hermes saves it in ~/.hermes)")
+        print("   → or set SWARM_LLM_BASE_URL + SWARM_LLM_API_KEY for an OpenAI-compatible / LiteLLM proxy")
+    else:
+        eff = resolve_model()
+        prov = eff.get("display_provider") or eff.get("provider") or "?"
+        srclabel = {
+            "default": "swarm default",
+            "hermes": "hermes setup (~/.hermes)",
+            "proxy": "LiteLLM proxy (SWARM_LLM_*)",
+        }.get(eff.get("source"), str(eff.get("source")))
+        print(f"✓ Model: {eff.get('model')}  (provider {prov}, source: {srclabel})")
+
+        base = eff.get("base_url")
+        if base:
+            # OpenAI-compatible / proxy: we know the endpoint, so probe it.
+            try:
+                import urllib.request, json as _json
+
+                req = urllib.request.Request(
+                    f"{base}/models",
+                    headers={"Authorization": f"Bearer {eff.get('api_key') or LLM_API_KEY}"},
+                )
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    data = _json.loads(resp.read().decode("utf-8"))
+                ids = [m.get("id") for m in data.get("data", []) if m.get("id")]
+                print(f"✓ Backend reachable at {base} — models: {ids or '(none listed)'}")
+                if ids and eff.get("model") not in ids:
+                    print(f"   ⚠ '{eff.get('model')}' not in the served list")
+            except Exception as e:
+                ok = False
+                print(f"✗ Backend NOT reachable at {base}: {e}")
+        else:
+            # Native Hermes provider: Hermes resolves the endpoint itself; we can
+            # only confirm a key is present for it.
+            has_key = bool(eff.get("api_key"))
+            mark = "✓" if has_key else "⚠"
+            print(f"  {mark} Native provider — Hermes resolves the endpoint; "
+                  f"API key {'present' if has_key else 'NOT found (run `hermes setup`)'}.")
+            if not has_key:
+                ok = False
 
     # 3) Chromium for the browser tools (optional but recommended)
     try:

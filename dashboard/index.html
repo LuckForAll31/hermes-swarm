@@ -125,13 +125,17 @@ button.msg-header, button.cc-divider, button.exec-label { width: 100%; }
 
 /* ===== DOCKED OVERLAY PANELS ===== */
 .ov { position: fixed; z-index: 50; background: rgba(5,5,6,0.88); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); border: 1px solid var(--border-strong); border-radius: var(--r-lg); box-shadow: 0 24px 60px -32px rgba(0,0,0,0.9); display: flex; flex-direction: column; overflow: hidden; }
-.ov-agents { top: calc(var(--topbar-h) + 12px); left: 14px; width: 304px; max-height: 34vh; }
-/* Workspace files dock in the middle of the left column, between agents (top)
-   and task queues (bottom). Anchored top+bottom so it fills the gap; collapsing
-   drops the bottom anchor (same trick as .ov-right) so it shrinks to its header. */
-.ov-workspace { top: calc(var(--topbar-h) + 12px + 34vh + 8px); left: 14px; width: 304px; bottom: calc(32vh + 22px); }
-.ov-workspace.collapsed { bottom: auto; }
-.ov-queue { left: 14px; bottom: 14px; width: 304px; max-height: 32vh; }
+/* Left column: agents / workspace / task-queue stacked to fill the FULL height.
+   The wrapper is the only fixed-position element; the three panels are flex
+   items that share the height by weight (--w). The drag handles between them
+   trade weight A↔B so the column always stays full and the non-adjacent panel
+   is untouched by a neighbouring drag. Weights persist in localStorage. */
+.left-col { position: fixed; z-index: 50; top: calc(var(--topbar-h) + 12px); left: 14px; bottom: 14px; width: 304px; display: flex; flex-direction: column; }
+.left-col .ov { position: static; inset: auto; width: 100%; max-height: none; flex: var(--w, 1) 1 0; min-height: 78px; }
+.left-col .ov.collapsed { flex: 0 0 auto; min-height: 0; }
+.v-resize { flex: 0 0 8px; cursor: row-resize; position: relative; touch-action: none; }
+.v-resize::before { content: ''; position: absolute; left: 10px; right: 10px; top: 3px; height: 2px; border-radius: 2px; background: var(--border-strong); transition: background 0.15s; }
+.v-resize:hover::before, .v-resize.dragging::before { background: var(--accent); }
 .ov-right { top: calc(var(--topbar-h) + 12px); right: 14px; bottom: 14px; width: 404px; max-width: calc(100vw - 28px); }
 /* Right panel is anchored top+bottom, so collapsing must drop the bottom
    anchor — otherwise the empty glass box stays full-height ("compact" no-op). */
@@ -459,13 +463,13 @@ button.msg-header, button.cc-divider, button.exec-label { width: 100%; }
 
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 @media (max-width: 1100px) {
-    .ov-agents, .ov-queue, .ov-workspace { width: 260px; }
+    .left-col { width: 260px; }
     .ov-right { width: 340px; }
     .ov-log { left: 288px; right: 368px; }
 }
 @media (max-width: 820px) {
-    .ov-agents { width: calc(100vw - 28px); max-height: 38vh; }
-    .ov-queue, .ov-workspace { display: none; }
+    .left-col { width: calc(100vw - 28px); bottom: auto; height: 38vh; }
+    .ov-workspace, .ov-queue, .left-col .v-resize { display: none; }
     .ov-right { width: calc(100vw - 28px); top: auto; height: 46vh; }
     .ov-log { left: 14px; right: 14px; }
     .zoom-controls { left: auto; right: 16px; transform: none; bottom: auto; top: calc(var(--topbar-h) + 8px); }
@@ -519,6 +523,8 @@ button.msg-header, button.cc-divider, button.exec-label { width: 100%; }
     </div>
 </div>
 
+<!-- Left column: agents / workspace / task-queue, full height, each resizable -->
+<div id="left-col" class="left-col">
 <!-- Agents (top-left) -->
 <div class="ov ov-agents" id="ov-agents">
     <div class="panel-header">
@@ -535,6 +541,7 @@ button.msg-header, button.cc-divider, button.exec-label { width: 100%; }
     </div>
 </div>
 
+<div class="v-resize" data-resize="agents↔workspace" title="Drag to resize"></div>
 <!-- Workspace files (left column, between agents and task queues) -->
 <div class="ov ov-workspace" id="ov-workspace">
     <div class="panel-header">
@@ -549,6 +556,7 @@ button.msg-header, button.cc-divider, button.exec-label { width: 100%; }
     </div>
 </div>
 
+<div class="v-resize" data-resize="workspace↔queue" title="Drag to resize"></div>
 <!-- Task queue (bottom-left) -->
 <div class="ov ov-queue" id="ov-queue">
     <div class="panel-header">
@@ -560,6 +568,7 @@ button.msg-header, button.cc-divider, button.exec-label { width: 100%; }
     </div>
     <div class="panel-body" id="queue-bars"></div>
 </div>
+</div><!-- /left-col -->
 
 <!-- Messages / Live / Digests (right) -->
 <div class="ov ov-right" id="ov-right">
@@ -1017,6 +1026,72 @@ function togglePanel(id) {
     const btn = p.querySelector('.ov-collapse');
     if (btn) btn.setAttribute('aria-expanded', String(!p.classList.contains('collapsed')));
 }
+
+/* ===== LEFT COLUMN RESIZE =====
+   The three left panels (agents / workspace / queue) share the column height by
+   a flex weight (--w). A drag handle between two panels trades weight between
+   exactly those two (sum preserved) so the column stays full and the third panel
+   is untouched. Weights persist per-panel in localStorage. */
+const _LEFT_PANELS = ['ov-agents', 'ov-workspace', 'ov-queue'];
+const _LEFT_DEFAULT_W = { 'ov-agents': 1.3, 'ov-workspace': 1, 'ov-queue': 1 };
+const _LEFT_MIN_PX = 78;
+let _leftW = {};
+
+function _saveLeftW() { try { localStorage.setItem('swarm_left_weights', JSON.stringify(_leftW)); } catch (e) {} }
+function _applyLeftW() {
+    _LEFT_PANELS.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.setProperty('--w', String(_leftW[id] != null ? _leftW[id] : 1));
+    });
+}
+function initLeftResizers() {
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem('swarm_left_weights') || '{}'); } catch (e) {}
+    _LEFT_PANELS.forEach(id => {
+        const v = parseFloat(saved[id]);
+        _leftW[id] = (isFinite(v) && v > 0) ? v : _LEFT_DEFAULT_W[id];
+    });
+    _applyLeftW();
+
+    document.querySelectorAll('.left-col .v-resize').forEach(handle => {
+        handle.addEventListener('pointerdown', e => {
+            const above = handle.previousElementSibling;
+            const below = handle.nextElementSibling;
+            if (!above || !below) return;
+            // Collapsed panels are flex:0 0 auto — dragging against them is a no-op.
+            if (above.classList.contains('collapsed') || below.classList.contains('collapsed')) return;
+            e.preventDefault();
+            handle.classList.add('dragging');
+            handle.setPointerCapture(e.pointerId);
+            const startY = e.clientY;
+            const hA = above.getBoundingClientRect().height;
+            const hB = below.getBoundingClientRect().height;
+            const totalPx = hA + hB;
+            const wA = _leftW[above.id], wB = _leftW[below.id];
+            const totalW = wA + wB;
+
+            const onMove = ev => {
+                let newA = hA + (ev.clientY - startY);
+                newA = Math.max(_LEFT_MIN_PX, Math.min(totalPx - _LEFT_MIN_PX, newA));
+                const ratio = newA / totalPx;
+                _leftW[above.id] = totalW * ratio;
+                _leftW[below.id] = totalW * (1 - ratio);
+                above.style.setProperty('--w', String(_leftW[above.id]));
+                below.style.setProperty('--w', String(_leftW[below.id]));
+            };
+            const onUp = ev => {
+                handle.classList.remove('dragging');
+                try { handle.releasePointerCapture(e.pointerId); } catch (_) {}
+                handle.removeEventListener('pointermove', onMove);
+                handle.removeEventListener('pointerup', onUp);
+                _saveLeftW();
+                fitView();   // network may have reflowed under the column
+            };
+            handle.addEventListener('pointermove', onMove);
+            handle.addEventListener('pointerup', onUp);
+        });
+    });
+}
 function toggleDensity() {
     denseMode = !denseMode;
     const t = document.getElementById('density-toggle');
@@ -1276,7 +1351,9 @@ function renderAgents() {
         const stColor = st === 'busy' ? 'var(--busy)' : st === 'asking_human' ? 'var(--human)' : st === 'paused' ? 'var(--danger)' : 'var(--idle)';
         const sub = [
             `<span class="cflag mono" title="Model">${esc(a.config?.model || 'default')}</span>`,
-            ctxPct != null ? `<span class="cflag" style="color:${ctxColor}" title="Context window used (${(tm.context_window||0).toLocaleString()} tokens)">ctx ${ctxPct}%</span>` : '',
+            ctxPct != null
+                ? `<span class="cflag" style="color:${ctxColor}" title="Context window used (${(tm.context_window||0).toLocaleString()} tokens)">ctx ${ctxPct}%</span>`
+                : `<span class="cflag" style="opacity:.5" title="Context usage is measured after this agent runs its first turn (the model runtime is built lazily).">ctx —</span>`,
             a.config?.is_supervisor ? `<span class="cflag" style="color:var(--human)" title="Supervisor — watches its linked agents">${icon('eye', 10)} overseer</span>` : '',
             a.config?.autonomous ? `<span class="cflag" style="color:var(--busy)" title="Self-drives when idle">auto</span>` : '',
             cr ? `<span class="cflag" style="color:var(--idle)" title="${cr} scheduled wake-up(s)">${icon('clock', 10)} ${cr}</span>` : '',
@@ -3321,6 +3398,7 @@ async function rejectProposal(pid) {
 document.addEventListener('DOMContentLoaded', () => {
     hydrateIcons();
     initStageNav();
+    initLeftResizers();
     applyView();
     // Keep the network framed when the window resizes.
     let _rsz = null;

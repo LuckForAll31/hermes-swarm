@@ -89,19 +89,52 @@ def _provider_key_env(provider: str) -> str:
     return "OPENAI_API_KEY"
 
 
-def _read_env_value(env_path: Path, key: str) -> str:
+def _parse_env_file(env_path: Path) -> Dict[str, str]:
+    """All KEY=VALUE pairs in a ``.env`` (quotes stripped). Empty on any error."""
+    out: Dict[str, str] = {}
     try:
-        if key and env_path.exists():
+        if env_path.exists():
             for line in env_path.read_text(encoding="utf-8").splitlines():
                 line = line.strip()
                 if not line or line.startswith("#") or "=" not in line:
                     continue
                 k, _, v = line.partition("=")
-                if k.strip() == key:
-                    return v.strip().strip('"').strip("'")
+                k = k.strip()
+                if k:
+                    out[k] = v.strip().strip('"').strip("'")
     except Exception:
         pass
-    return ""
+    return out
+
+
+def _read_env_value(env_path: Path, key: str) -> str:
+    return _parse_env_file(env_path).get(key, "") if key else ""
+
+
+def import_hermes_secrets() -> List[str]:
+    """Load existing Hermes ``.env`` secrets into THIS process's environment, so
+    swarm agents inherit every provider/tool API key already configured for
+    Hermes — not just the model provider's key.
+
+    Reads two homes: the swarm's shared home (``data/.hermes-shared`` — where
+    ``hermes setup`` writes in the Docker flow) takes precedence, then the user's
+    personal ``~/.hermes`` (the pip/local flow). Agents run in-process (each under
+    its own HERMES_HOME), so values in ``os.environ`` are visible to all of them;
+    Hermes' web/tool plugins read them via ``os.getenv``. NON-overriding:
+    anything already set in the environment (explicit server/deployment config,
+    SWARM_*) wins, so this never clobbers it. Returns the names imported (for
+    logging — values are never logged).
+    """
+    imported: List[str] = []
+    for home in (SHARED_HERMES_HOME, GLOBAL_HERMES_HOME):
+        for k, v in _parse_env_file(home / ".env").items():
+            if k and k not in os.environ:
+                os.environ[k] = v
+                imported.append(k)
+    if imported:
+        log.info("Imported %d Hermes secret(s) into the environment: %s",
+                 len(imported), ", ".join(sorted(imported)))
+    return imported
 
 
 def build_provider_presets() -> List[Dict[str, Any]]:
@@ -229,6 +262,8 @@ def detect_global_hermes_model() -> Dict[str, Any]:
 def is_model_configured() -> bool:
     if get_default_model().get("model"):
         return True
+    if detect_global_hermes_model().get("model"):  # `hermes setup` (~/.hermes)
+        return True
     if os.environ.get("SWARM_LLM_BASE_URL"):
         return True
     return False
@@ -247,9 +282,24 @@ def resolve_model(agent_cfg: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         base = dict(default)
         base_source = "default"
     else:
-        base = {"provider": "custom", "model": DEFAULT_MODEL,
-                "base_url": LITELLM_API_BASE, "api_key": LLM_API_KEY}
-        base_source = "proxy"
+        # No swarm default yet: adopt the user's NATIVE Hermes setup (~/.hermes),
+        # which is the canonical place to configure a provider — `hermes setup`
+        # writes there.
+        glob = detect_global_hermes_model()
+        if glob.get("model"):
+            base = dict(glob)
+            base_source = "hermes"
+        elif os.environ.get("SWARM_LLM_BASE_URL"):
+            # Explicit opt-in ONLY: route the whole swarm through one
+            # OpenAI-compatible / LiteLLM proxy. There is NO implicit localhost
+            # proxy — without SWARM_LLM_BASE_URL the swarm is "unconfigured" and
+            # asks the operator to run `hermes setup`.
+            base = {"provider": "custom", "model": DEFAULT_MODEL,
+                    "base_url": LITELLM_API_BASE, "api_key": LLM_API_KEY}
+            base_source = "proxy"
+        else:
+            base = {"provider": "", "model": "", "base_url": "", "api_key": ""}
+            base_source = "unconfigured"
 
     ov_model = (agent_cfg.get("model") or "").strip()
     ov_provider = (agent_cfg.get("provider") or "").strip()
@@ -258,7 +308,10 @@ def resolve_model(agent_cfg: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     overridden = bool(ov_model or ov_provider or ov_base or ov_key)
 
     provider = ov_provider or base.get("provider") or "custom"
-    model = ov_model or base.get("model") or DEFAULT_MODEL
+    # Empty when truly unconfigured (no override, no default, no opt-in proxy):
+    # the agent build surfaces a clear "run `hermes setup`" error instead of
+    # silently dialing a phantom localhost proxy.
+    model = ov_model or base.get("model") or ""
 
     # api_key: prefer an explicit override key. Otherwise inherit the default's
     # key ONLY when the override stays on the SAME provider (and base_url) as the
@@ -290,8 +343,8 @@ def resolve_model(agent_cfg: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         # Custom path: needs a base_url. Inherit/override, else preset, else proxy.
         base_url = ov_base or base.get("base_url") or preset.get("base_url") or ""
         route_provider = "custom"
-        if not base_url:
-            base_url = LITELLM_API_BASE  # last resort so the call has an endpoint
+        if not base_url and os.environ.get("SWARM_LLM_BASE_URL"):
+            base_url = LITELLM_API_BASE  # only when the proxy is explicitly enabled
     else:
         # Native provider: Hermes resolves the endpoint from its registry. Pass a
         # base_url only if one was explicitly set (don't inherit a proxy URL).

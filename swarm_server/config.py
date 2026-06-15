@@ -192,9 +192,11 @@ WORKSPACE_ROOT = DATA_ROOT / "teams"
 SERVER_HOST = os.environ.get("SWARM_HOST", "127.0.0.1")
 SERVER_PORT = int(os.environ.get("SWARM_PORT", "8000"))
 
-# LLM backend (OpenAI-compatible). Defaults to the local LiteLLM proxy for
-# back-compat; new users point SWARM_LLM_BASE_URL at any OpenAI-compatible
-# endpoint (their own proxy, OpenRouter, etc.) and supply the matching key.
+# Optional single OpenAI-compatible / LiteLLM proxy for the WHOLE swarm. This is
+# opt-in: resolve_model() only routes through it when SWARM_LLM_BASE_URL is set
+# explicitly (there is no implicit localhost proxy — an unconfigured swarm asks
+# the operator to run `hermes setup`). The literal below is just the value used
+# IF the proxy is enabled without a custom URL; it is never dialed on its own.
 LITELLM_API_BASE = os.environ.get("SWARM_LLM_BASE_URL", "http://127.0.0.1:4000/v1")
 LLM_API_KEY = os.environ.get("SWARM_LLM_API_KEY", "sk-1234")
 SWEEP_INTERVAL_SECONDS = int(os.environ.get("SWARM_SWEEP_INTERVAL", "10"))

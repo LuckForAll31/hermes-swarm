@@ -170,6 +170,15 @@ async def lifespan(app: FastAPI):
     cfg = load_agents_config()
     loop = asyncio.get_running_loop()
 
+    # Inherit the user's existing Hermes secrets (~/.hermes/.env) — provider AND
+    # tool API keys (Firecrawl/Tavily/Exa/…) — into this process so every agent
+    # can use them. Non-overriding, so explicit server/deployment env still wins.
+    try:
+        from swarm_server.model_config import import_hermes_secrets
+        import_hermes_secrets()
+    except Exception as e:
+        log.warning("[Startup] importing ~/.hermes secrets failed: %s", e)
+
     # Rebuild today's per-team spend meter from monitoring.db BEFORE daemons
     # start sweeping, so a mid-day restart resumes with the correct budget state
     # (a team already over its cap stays paused instead of getting a free reset).
