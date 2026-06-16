@@ -5,6 +5,28 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Hermes Swarm — Mission control for a swarm of agents</title>
 <meta name="description" content="A self-hostable team of full AI agents that collaborate 24/7 on your own hardware — browsing, building, publishing — and one real-time console to command them.">
+
+<!-- Favicons -->
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#000000">
+
+<!-- Open Graph / social share cards (absolute urls required by social scrapers). -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Hermes Swarm">
+<meta property="og:title" content="Hermes Swarm — Mission control for a swarm of agents">
+<meta property="og:description" content="A self-hostable team of full AI agents that browse, build & publish 24/7 on your own hardware — one real-time console to command them.">
+<meta property="og:image" content="https://missioncontrol.lunalabs-ai.com/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Hermes Swarm — mission control for a swarm of agents">
+<meta property="og:url" content="https://missioncontrol.lunalabs-ai.com/">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Hermes Swarm — Mission control for a swarm of agents">
+<meta name="twitter:description" content="A self-hostable team of full AI agents that browse, build & publish 24/7 on your own hardware — one real-time console to command them.">
+<meta name="twitter:image" content="https://missioncontrol.lunalabs-ai.com/og-image.png">
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -30,6 +52,12 @@
   --maxw:1180px;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+/* Custom scrollbar styling to match the dark dashboard theme */
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border-strong);border:2px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background:#4A4A52;background-clip:padding-box}
+*{scrollbar-width:thin;scrollbar-color:var(--border-strong) transparent}
 html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
 @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
 body{
@@ -98,9 +126,8 @@ img,svg,canvas{display:block;max-width:100%}
 #swarm{position:absolute;inset:0;width:100%;height:100%;z-index:0}
 .hero-scrim{position:absolute;inset:0;z-index:var(--z-scrim);pointer-events:none;
   background:
-    linear-gradient(90deg,var(--bg) 0%,rgba(0,0,0,.86) 34%,rgba(0,0,0,.25) 66%,rgba(0,0,0,.55) 100%),
-    radial-gradient(120% 80% at 12% 50%,transparent 40%,rgba(0,0,0,.7) 100%),
-    linear-gradient(0deg,var(--bg) 1%,transparent 22%,transparent 80%,rgba(0,0,0,.7) 100%);
+    radial-gradient(115% 85% at 50% 46%,rgba(0,0,0,.88) 0%,rgba(0,0,0,.7) 38%,rgba(0,0,0,.32) 62%,transparent 82%),
+    linear-gradient(0deg,var(--bg) 1%,transparent 26%,transparent 74%,rgba(0,0,0,.65) 100%);
 }
 @media (max-width:760px){
   .hero-scrim{background:linear-gradient(0deg,var(--bg) 4%,rgba(0,0,0,.55) 42%,rgba(0,0,0,.72) 100%)}
@@ -114,29 +141,20 @@ img,svg,canvas{display:block;max-width:100%}
 .hud i.bl{bottom:0;left:0;border-bottom-width:1px;border-left-width:1px}
 .hud i.br{bottom:0;right:0;border-bottom-width:1px;border-right-width:1px}
 
-.hero-inner{position:relative;z-index:var(--z-content);flex:1;display:flex;flex-direction:column;justify-content:center;padding-block:80px 0}
-.hero-kicker{display:flex;align-items:center;gap:12px;margin-bottom:26px}
+.hero-inner{position:relative;z-index:var(--z-content);flex:1;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;text-align:center;padding-block:96px}
+.hero-kicker{display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:26px}
 .hero-kicker .label{color:var(--text-secondary)}
 .hero-kicker .sep{width:5px;height:5px;background:var(--idle);border-radius:50%;box-shadow:0 0 8px var(--idle)}
 h1.hero-title{
   font-family:var(--disp);font-weight:700;text-transform:uppercase;
   font-size:clamp(2.6rem,7.2vw,5.7rem);line-height:0.96;letter-spacing:-0.02em;
-  text-wrap:balance;max-width:16ch;
+  text-wrap:balance;max-width:18ch;margin-inline:auto;
 }
 h1.hero-title .ln{display:block;overflow:hidden}
 h1.hero-title em{font-style:normal;color:var(--text-dim)}
-.hero-sub{margin-top:30px;max-width:46ch;font-size:clamp(15px,1.7vw,18px);color:var(--text-secondary);line-height:1.62}
-.hero-actions{margin-top:38px;display:flex;flex-wrap:wrap;gap:14px}
-
-/* telemetry readout pinned low in hero */
-.telemetry{position:relative;z-index:var(--z-content);border-top:1px solid var(--border);margin-top:auto}
-.telemetry .wrap{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);
-  border-left:0;border-right:0}
-.tcell{background:var(--bg);padding:18px clamp(8px,2vw,22px) 20px;display:flex;flex-direction:column;gap:6px}
-.tcell .tk{font-family:var(--mono);font-size:10px;letter-spacing:0.18em;text-transform:uppercase;color:var(--text-dim);display:flex;align-items:center;gap:7px}
-.tcell .tv{font-family:var(--mono);font-weight:500;font-size:clamp(20px,3vw,30px);color:var(--text);font-variant-numeric:tabular-nums;line-height:1}
-.tcell .tv small{font-size:.5em;color:var(--text-muted);margin-left:2px}
-@media (max-width:760px){.telemetry .wrap{grid-template-columns:repeat(2,1fr)}}
+.hero-sub{margin:30px auto 0;max-width:52ch;font-size:clamp(15px,1.7vw,18px);color:var(--text-secondary);line-height:1.62}
+.hero-actions{margin-top:34px;display:flex;flex-wrap:wrap;justify-content:center;gap:14px}
 
 /* =========================================================
    GENERIC SECTION
@@ -184,7 +202,9 @@ h2 em{font-style:normal;color:var(--text-dim)}
    AGENT ANATOMY
    ========================================================= */
 .anatomy .wrap{display:grid;grid-template-columns:1fr 1fr;gap:clamp(36px,6vw,90px)}
-@media (max-width:880px){.anatomy .wrap{grid-template-columns:1fr;gap:44px}}
+.anatomy-aside{align-self:start;position:sticky;top:96px}
+@media (max-width:880px){.anatomy .wrap{grid-template-columns:1fr;gap:44px}
+  .anatomy-aside{position:static;top:auto}}
 .spec-list{display:flex;flex-direction:column}
 .spec{display:grid;grid-template-columns:auto 1fr;gap:18px;padding:22px 0;border-top:1px solid var(--border);align-items:start}
 .spec:last-child{border-bottom:1px solid var(--border)}
@@ -192,7 +212,7 @@ h2 em{font-style:normal;color:var(--text-dim)}
 .spec-ico svg{width:18px;height:18px}
 .spec h3{font-family:var(--disp);font-weight:600;font-size:17px;text-transform:uppercase;letter-spacing:0.02em;margin-bottom:5px}
 .spec p{font-size:14.5px;color:var(--text-muted);line-height:1.55;max-width:42ch}
-.anatomy-aside{align-self:start;position:sticky;top:96px}
+
 
 /* =========================================================
    CONSOLE SHOWCASE
@@ -276,7 +296,8 @@ h2 em{font-style:normal;color:var(--text-dim)}
 .cta .sec-lead{margin-inline:auto;margin-top:24px}
 .cta-cmd{margin:38px auto 30px;max-width:560px;display:flex;align-items:center;gap:12px;border:1px solid var(--border-strong);border-radius:var(--r-md);background:var(--bg-input);padding:14px 16px;font-family:var(--mono);font-size:13.5px;text-align:left}
 .cta-cmd .pr{color:var(--idle);user-select:none}
-.cta-cmd code{flex:1;color:var(--text);white-space:nowrap;overflow-x:auto}
+.cta-cmd code{flex:1;color:var(--text);white-space:nowrap;overflow-x:auto;scrollbar-width:none}
+.cta-cmd code::-webkit-scrollbar{display:none}
 .cta-cmd .copy-inline{cursor:pointer;color:var(--text-muted);background:none;border:0;font-family:var(--mono);font-size:11px;letter-spacing:0.08em;text-transform:uppercase;flex:none;transition:color .2s}
 .cta-cmd .copy-inline:hover{color:var(--text)}
 .cta-actions{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
@@ -318,17 +339,31 @@ footer .wrap{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:32px}
 /* =========================================================
    HERO COMMAND + PRODUCT MOCKS (control deck, architect)
    ========================================================= */
-.hero-cmd{margin-top:30px;max-width:min(560px,100%);display:flex;align-items:center;gap:12px;
-  border:1px solid var(--border-strong);border-radius:var(--r-md);background:rgba(5,5,6,0.74);
-  backdrop-filter:blur(6px);padding:13px 15px;font-family:var(--mono);font-size:13px}
+.hero-cmd{margin:34px auto 0;max-width:min(580px,100%);display:flex;align-items:center;gap:12px;
+  border:1px solid rgba(62,207,142,0.42);border-radius:var(--r-md);background:rgba(62,207,142,0.06);
+  backdrop-filter:blur(6px);padding:15px 16px;font-family:var(--mono);font-size:13px;
+  box-shadow:0 0 0 1px rgba(62,207,142,0.08),0 30px 70px -44px rgba(62,207,142,0.5)}
 .hero-cmd .pr{color:var(--idle);user-select:none}
-.hero-cmd code{flex:1;color:var(--text);white-space:nowrap;overflow-x:auto;scrollbar-width:none}
+.hero-cmd code{flex:1;color:var(--text);white-space:nowrap;overflow-x:auto;scrollbar-width:none;text-align:left}
 .hero-cmd code::-webkit-scrollbar{display:none}
 .hero-cmd .cmd-os{font-family:var(--mono);font-size:10px;letter-spacing:0.14em;color:var(--text-dim);
   text-transform:uppercase;margin-top:11px;display:flex;align-items:center;gap:8px}
-.copy-inline{cursor:pointer;color:var(--text-muted);background:none;border:0;font-family:var(--mono);
+.copy-inline{cursor:pointer;color:var(--idle);background:none;border:0;font-family:var(--mono);
   font-size:11px;letter-spacing:0.08em;text-transform:uppercase;flex:none;transition:color .2s}
-.copy-inline:hover{color:var(--text)}
+.copy-inline:hover{color:#6fe6b3}
+
+/* hero — "hand it to your AI agent" prompt copy buttons */
+.hero-prompts{margin:30px auto 0;max-width:min(580px,100%)}
+.hero-or{display:flex;align-items:center;justify-content:center;gap:14px;margin-bottom:18px;
+  font-family:var(--mono);font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:var(--text-dim)}
+.hero-or::before,.hero-or::after{content:"";flex:1;max-width:90px;height:1px;background:var(--border)}
+.hero-prompts .hp-btns{display:flex;flex-wrap:wrap;justify-content:center;gap:12px}
+.hero-prompts .hp-foot{display:block;margin-top:14px;font-size:12.5px;line-height:1.5;color:var(--text-muted)}
+/* green "go" fill for the install-prompt buttons — the centered colour focus */
+.btn-go{background:var(--idle);color:#03130B;border-color:var(--idle);font-weight:600}
+.btn-go:hover{background:#54e0a1;border-color:#54e0a1;transform:translateY(-2px)}
+.btn-go svg{width:13px;height:13px}
+.btn-go.copied{background:#03130B;color:var(--idle)}
 
 /* control deck — live dashboard cards */
 .deck{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin:clamp(32px,5vw,52px) 0 6px}
@@ -376,6 +411,32 @@ footer .wrap{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:32px}
 .arch-roles .r-wr .nm::before{color:var(--human)}.arch-roles .r-ed .nm::before{color:var(--tool)}
 .arch-roles .ds{color:var(--text-muted)}
 .arch-actions{display:flex;gap:10px;align-self:flex-start;margin-top:2px}
+
+/* =========================================================
+   MOBILE OPTIMISATION (consolidated)
+   ========================================================= */
+@media (max-width:600px){
+  /* tighter section rhythm */
+  .sec{padding-block:clamp(64px,16vw,96px)}
+  .hero-inner{padding-block:84px 40px}
+  /* hero command + prompt buttons: stack full-width, easy to tap */
+  .hero-cmd{font-size:11.5px;padding:13px 13px;gap:9px;max-width:100%}
+  .hero-cmd .copy-inline{font-size:10px}
+  .hero-prompts{max-width:100%}
+  .hero-prompts .hp-btns{width:100%}
+  .hero-prompts .copy-prompt{flex:1 1 100%;justify-content:center;padding:12px 14px}
+  .hero-actions{width:100%;gap:10px}
+  .hero-actions .btn{flex:1 1 0;justify-content:center;min-width:0}
+  /* comfortable tap target on the nav deploy button */
+  .nav-cta .btn-sm{padding:10px 16px}
+  /* spec rows: a touch tighter */
+  .spec{padding:18px 0;gap:14px}
+  .spec p{max-width:100%}
+}
+@media (max-width:380px){
+  /* let the long install URL breathe instead of clipping the COPY button */
+  .hero-cmd{font-size:10.5px}
+}
 </style>
 </head>
 <body>
@@ -446,35 +507,21 @@ footer .wrap{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:32px}
     <div class="cmd-os" style="font-family:var(--mono);font-size:10px;letter-spacing:0.14em;color:var(--text-dim);text-transform:uppercase;margin-top:11px;display:flex;align-items:center;gap:8px">
       <span class="livedot"></span>One line · macOS &amp; Linux · clones, installs, opens the console
     </div>
-    <div class="hero-actions reveal" data-d="3" style="margin-top:30px">
-      <a class="btn btn-primary" href="#install">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
-        Deploy the swarm
-      </a>
-      <a class="btn btn-ghost" href="#console">See the console</a>
+    <div class="hero-prompts reveal" data-d="3">
+      <div class="hero-or"><span>or hand it to your AI agent</span></div>
+      <div class="hp-btns">
+        <button class="btn btn-go btn-sm copy-prompt" data-target="promptLocal" aria-label="Copy the local-install prompt">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="1.5"/><path d="M5 15V5a1.5 1.5 0 0 1 1.5-1.5H15"/></svg>
+          <span>Local-install prompt</span>
+        </button>
+        <button class="btn btn-go btn-sm copy-prompt" data-target="promptVps" aria-label="Copy the VPS-install prompt">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="1.5"/><path d="M5 15V5a1.5 1.5 0 0 1 1.5-1.5H15"/></svg>
+          <span>VPS-install prompt</span>
+        </button>
+      </div>
+      <span class="hp-foot">Paste into Claude Code, Codex, opencode, or Hermes — it installs &amp; configures for you.</span>
     </div>
-  </div>
-
-  <!-- telemetry readout -->
-  <div class="telemetry reveal" data-d="4">
-    <div class="wrap">
-      <div class="tcell">
-        <span class="tk"><span class="livedot"></span>Agents online</span>
-        <span class="tv" data-count="6" data-pad="2">00</span>
-      </div>
-      <div class="tcell">
-        <span class="tk">Tasks / min</span>
-        <span class="tv" data-count="24">0</span>
-      </div>
-      <div class="tcell">
-        <span class="tk">Tool calls today</span>
-        <span class="tv" data-count="1240" data-suffix="" data-k="1">0</span>
-      </div>
-      <div class="tcell">
-        <span class="tk">Uptime</span>
-        <span class="tv" data-count="999" data-div="10" data-suffix="%">0<small>%</small></span>
-      </div>
-    </div>
+    
   </div>
 </header>
 
@@ -746,6 +793,52 @@ footer .wrap{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:32px}
 
 </main>
 
+<!-- Prompt sources for the hero "hand it to your AI agent" copy buttons.
+     type="text/plain" keeps them out of the render tree; JS reads .textContent. -->
+<script type="text/plain" id="promptLocal">Install and run Hermes Swarm on this machine for me.
+
+Hermes Swarm (https://github.com/CyberTron957/hermes-mission-control) is a
+self-hosted multi-agent server with a real-time dashboard. Please:
+
+1. Check prerequisites first: Python 3.11+ (or Docker). If something is missing,
+   tell me before installing any system packages.
+2. Clone the repo into ./hermes-swarm and run its installer: `bash install.sh`.
+   It creates a .venv, installs dependencies, and installs Chromium for the
+   browser tools. (Pass `--no-browser` if Chromium can't install — everything
+   else still works.)
+3. The installer runs `hermes setup` to pick an LLM provider + API key — PAUSE
+   and ask me which provider to use and for the key. Do not guess or hardcode one.
+4. Verify with `hermes-swarm doctor` and fix anything it flags.
+5. Scaffold a starter team and start the server: `hermes-swarm init && hermes-swarm up`.
+6. Confirm the dashboard is live at http://127.0.0.1:8000, then tell me how to
+   open it and build my first team with the Architect.
+
+Keep my API key local. Don't commit anything or send data anywhere.</script>
+<script type="text/plain" id="promptVps">Deploy Hermes Swarm on this VPS, exposed safely over HTTPS.
+
+Hermes Swarm (https://github.com/CyberTron957/hermes-mission-control) is a
+self-hosted multi-agent server. Its agents can run terminal commands as the
+server user, so containment and auth matter. Please:
+
+1. Read docs/deploy-vps.md in the repo and follow its hardened path. Prefer the
+   Docker route so the agents' terminal access stays contained.
+2. Clone the repo and bring it up with Docker Compose (restart: unless-stopped).
+3. Generate a strong SWARM_API_KEY and set it — it must guard every endpoint and
+   the WebSocket. Show it to me once and store it somewhere I can find it.
+4. Configure the LLM provider via `hermes setup` against the shared config —
+   PAUSE and ask me for the provider + API key.
+5. Put it behind a TLS reverse proxy (Caddy or nginx) for my domain — ask me for
+   the domain/subdomain — with automatic HTTPS.
+6. Lock down the firewall: only 80/443 and SSH open; do NOT expose the raw app
+   port.
+7. Verify: GET /health returns ok, and the dashboard loads over HTTPS and prompts
+   for the API key.
+8. Report back the URL, where the API key is stored, and how to watch logs
+   (docker logs / journald).
+
+Ask me before anything destructive. Never print my API key or provider key into a
+file that could be committed.</script>
+
 <!-- ============ FINAL CTA ============ -->
 <section class="cta">
   <div class="cta-glow"></div>
@@ -965,6 +1058,18 @@ footer .wrap{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:32px}
   var heroCopy = document.getElementById('heroCopy');
   if(heroCopy) heroCopy.addEventListener('click', function(){ copyText(ONELINER, heroCopy); });
 
+  /* ---------- "hand it to your AI agent" prompt copy buttons ---------- */
+  [].slice.call(document.querySelectorAll('.copy-prompt')).forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var src = document.getElementById(btn.getAttribute('data-target'));
+      if(!src) return;
+      var txt = src.textContent.replace(/^\n/, '').replace(/\s+$/, '');
+      copyText(txt, btn);
+      btn.classList.add('copied');
+      setTimeout(function(){ btn.classList.remove('copied'); }, 1500);
+    });
+  });
+
   /* ---------- hero swarm canvas ---------- */
   var cv = document.getElementById('swarm');
   if(cv){
@@ -972,86 +1077,145 @@ footer .wrap{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:32px}
     var DPR = Math.min(window.devicePixelRatio||1, 2);
     var W=0,H=0;
     var COL = {idle:'#3ECF8E',busy:'#F5B544',human:'#5B9DFF',tool:'#45D6E8',danger:'#F2555A',white:'#F4F4F5'};
-    // constellation in normalized coords, weighted to the right so left text breathes
-    var NODES = [
-      {x:0.62,y:0.40,c:'busy', r:7, lbl:'COORDINATOR'},
-      {x:0.78,y:0.24,c:'idle', r:5, lbl:'RESEARCHER'},
-      {x:0.88,y:0.46,c:'human',r:5, lbl:'WRITER'},
-      {x:0.80,y:0.66,c:'tool', r:5, lbl:'EDITOR'},
-      {x:0.62,y:0.74,c:'idle', r:5, lbl:'ANALYST'},
-      {x:0.48,y:0.60,c:'idle', r:5, lbl:'QA'},
-      {x:0.50,y:0.26,c:'white',r:5, lbl:'DESIGNER'},
-      {x:0.92,y:0.30,c:'idle', r:3.5,lbl:''},
-      {x:0.70,y:0.55,c:'tool', r:3.5,lbl:''},
-      {x:0.40,y:0.42,c:'white',r:3.5,lbl:''}
-    ];
-    var EDGES = [[0,1],[0,2],[0,3],[0,4],[0,5],[0,6],[1,7],[2,7],[3,8],[5,9]];
-    var packets = [];
-    function seedPackets(){
-      packets = EDGES.map(function(e,i){
-        return {e:e, p:Math.random(), spd:0.0016+Math.random()*0.0022, c:(i%2?COL.tool:COL.human), on:Math.random()>0.35};
+    // mostly green ("live") with occasional tool/human/busy accents
+    var COLS = [COL.idle,COL.idle,COL.idle,COL.idle,COL.tool,COL.human,COL.busy];
+    var LEADS = ['COORDINATOR','RESEARCHER','WRITER','EDITOR','ANALYST','QA',
+                 'DESIGNER','BUILDER','OUTREACH','OPS','REVIEWER','SCOUT'];
+    // deterministic PRNG so the layout is stable for a given canvas size
+    var seed = 0;
+    function rnd(){ seed = (seed*1664525 + 1013904223) & 0x7fffffff; return seed/0x7fffffff; }
+
+    var NODES=[], EDGES=[], packets=[], gridCols=0, gridRows=0;
+
+    // Build a full-bleed agent mesh: a jittered grid of nodes covering the whole
+    // viewport, wired to nearest neighbours, with message packets routing between
+    // them. The dead-centre (behind the headline) is kept sparse on purpose.
+    function buildGraph(){
+      seed = 20260616; NODES=[]; EDGES=[]; packets=[];
+      var cols=gridCols, rows=gridRows;
+      for(var gy=0; gy<rows; gy++){
+        for(var gx=0; gx<cols; gx++){
+          if(rnd()<0.10) continue;                       // gaps -> organic, not gridded
+          var nx=(gx+0.5)/cols + (rnd()-0.5)*0.78/cols;
+          var ny=(gy+0.5)/rows + (rnd()-0.5)*0.78/rows;
+          var dcx=nx-0.5, dcy=ny-0.5;
+          if(Math.sqrt(dcx*dcx+dcy*dcy)<0.17 && rnd()<0.72) continue;  // sparser centre
+          NODES.push({x:nx,y:ny,c:COLS[(rnd()*COLS.length)|0],baseR:0,ph:rnd()*6.28,flash:0,lbl:''});
+        }
+      }
+      // promote a spread of nodes to labelled hubs (bigger, brighter, more links)
+      var order=NODES.map(function(_,i){return i;});
+      for(var i=order.length-1;i>0;i--){ var j=(rnd()*(i+1))|0; var tmp=order[i]; order[i]=order[j]; order[j]=tmp; }
+      var hubCount=Math.min(LEADS.length, Math.max(5,(NODES.length*0.16)|0));
+      for(var h=0;h<hubCount;h++){ var n=NODES[order[h]]; n.baseR=6.5+rnd()*2.2; n.lbl=LEADS[h]||''; if(rnd()<0.35) n.c=COL.busy; }
+      NODES.forEach(function(n){ if(!n.baseR) n.baseR=2.5+rnd()*2.2; });
+      // edges: nearest neighbours within a capped span (no long crossings)
+      var maxLen2=Math.pow(1.7/cols,2)+Math.pow(1.7/rows,2), seen={};
+      NODES.forEach(function(n,i){
+        var d=[];
+        NODES.forEach(function(m,j){ if(j!==i){ var ax=n.x-m.x, ay=n.y-m.y; d.push([ax*ax+ay*ay,j]); } });
+        d.sort(function(a,b){return a[0]-b[0];});
+        var k=n.baseR>5?3:2;
+        for(var q=0;q<k && q<d.length;q++){
+          if(d[q][0]>maxLen2) break;
+          var j=d[q][1], key=i<j?i+'-'+j:j+'-'+i;
+          if(seen[key]) continue; seen[key]=1; EDGES.push([i,j]);
+        }
+      });
+      // a majority of edges actively carry messages
+      EDGES.forEach(function(e){
+        if(rnd()<0.6){
+          packets.push({e:e, p:rnd(), spd:0.28+rnd()*0.6, dir:(rnd()<0.5?1:-1),
+            c:(rnd()<0.62?COL.idle:(rnd()<0.5?COL.tool:COL.human)), on:rnd()>0.4});
+        }
       });
     }
-    seedPackets();
+
+    var lowFx=false;
     function resize(){
-      W = cv.clientWidth; H = cv.clientHeight;
-      cv.width = W*DPR; cv.height = H*DPR;
-      ctx.setTransform(DPR,0,0,DPR,0,0);
+      W=cv.clientWidth; H=cv.clientHeight;
+      cv.width=W*DPR; cv.height=H*DPR; ctx.setTransform(DPR,0,0,DPR,0,0);
+      lowFx = W<640;                                   // phones: lighter, no glow
+      var aspect=(W||1)/(H||1);
+      var c=Math.min(12,Math.max(6,Math.round(7*Math.sqrt(aspect))));
+      var r=Math.min(8,Math.max(4,Math.round(c/aspect)));
+      if(lowFx){ c=Math.min(c,7); r=Math.min(r,6); }   // fewer nodes on small screens
+      if(c!==gridCols||r!==gridRows||!NODES.length){ gridCols=c; gridRows=r; buildGraph(); }
     }
-    function px(n){ return {x:n.x*W, y:n.y*H}; }
-    var t0 = 0;
+    // node position with a gentle per-node bob so the whole mesh feels alive
+    function px(n){ return {x:n.x*W + Math.sin(T*0.6+n.ph)*3, y:n.y*H + Math.cos(T*0.5+n.ph)*3}; }
+    var t0=0, T=0, lastTs=0;
     function draw(ts){
-      if(!t0) t0 = ts; var t = (ts-t0)/1000;
+      if(!t0){ t0=ts; lastTs=ts; }
+      T=(ts-t0)/1000;
+      var dt=Math.min(0.05,(ts-lastTs)/1000); lastTs=ts;
       ctx.clearRect(0,0,W,H);
       // faint coordinate grid
-      ctx.strokeStyle = 'rgba(30,30,34,0.5)'; ctx.lineWidth = 1;
-      var gap = 64;
-      ctx.beginPath();
+      ctx.strokeStyle='rgba(30,30,34,0.45)'; ctx.lineWidth=1; ctx.beginPath();
+      var gap=64;
       for(var gx=gap; gx<W; gx+=gap){ ctx.moveTo(gx,0); ctx.lineTo(gx,H); }
       for(var gy=gap; gy<H; gy+=gap){ ctx.moveTo(0,gy); ctx.lineTo(W,gy); }
       ctx.stroke();
-      // edges
-      ctx.strokeStyle = 'rgba(46,46,52,0.9)'; ctx.lineWidth = 1;
+      // edges (single path, dim)
+      ctx.strokeStyle='rgba(48,48,54,0.6)'; ctx.lineWidth=1; ctx.beginPath();
+      EDGES.forEach(function(e){ var a=px(NODES[e[0]]), b=px(NODES[e[1]]); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); });
+      ctx.stroke();
+      // directional arrowheads along each link (flow agent -> agent)
+      ctx.strokeStyle='rgba(94,94,104,0.6)'; ctx.lineWidth=1.1; ctx.beginPath();
       EDGES.forEach(function(e){
         var a=px(NODES[e[0]]), b=px(NODES[e[1]]);
-        ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+        var mx=a.x+(b.x-a.x)*0.58, my=a.y+(b.y-a.y)*0.58;
+        var ang=Math.atan2(b.y-a.y,b.x-a.x), s=5;
+        ctx.moveTo(mx-Math.cos(ang-0.42)*s, my-Math.sin(ang-0.42)*s);
+        ctx.lineTo(mx,my);
+        ctx.lineTo(mx-Math.cos(ang+0.42)*s, my-Math.sin(ang+0.42)*s);
       });
-      // packets
+      ctx.stroke();
+      // message packets routing agent -> agent, with a short comet trail
       packets.forEach(function(pk){
-        if(!pk.on){ if(Math.random()<0.004) pk.on=true; return; }
-        pk.p += pk.spd;
-        if(pk.p>=1){ pk.p=0; pk.on = Math.random()>0.3; }
-        var a=px(NODES[pk.e[0]]), b=px(NODES[pk.e[1]]);
+        if(!pk.on){ if(Math.random()<0.006) pk.on=true; return; }
+        pk.p += pk.spd*dt;
+        if(pk.p>=1){
+          pk.p=0;
+          NODES[pk.dir>0?pk.e[1]:pk.e[0]].flash=1;     // receiver lights up
+          pk.on=Math.random()>0.22;
+          if(Math.random()<0.5) pk.dir*=-1;            // reply back along the link
+        }
+        var ia=pk.dir>0?pk.e[0]:pk.e[1], ib=pk.dir>0?pk.e[1]:pk.e[0];
+        var a=px(NODES[ia]), b=px(NODES[ib]);
         var x=a.x+(b.x-a.x)*pk.p, y=a.y+(b.y-a.y)*pk.p;
-        ctx.beginPath(); ctx.arc(x,y,2.2,0,6.283);
-        ctx.fillStyle = pk.c; ctx.shadowColor = pk.c; ctx.shadowBlur = 8;
-        ctx.fill(); ctx.shadowBlur = 0;
+        var qp=Math.max(0,pk.p-0.13), tx=a.x+(b.x-a.x)*qp, ty=a.y+(b.y-a.y)*qp;
+        var grd=ctx.createLinearGradient(tx,ty,x,y);
+        grd.addColorStop(0,'rgba(0,0,0,0)'); grd.addColorStop(1,pk.c);
+        ctx.strokeStyle=grd; ctx.lineWidth=1.6; ctx.beginPath(); ctx.moveTo(tx,ty); ctx.lineTo(x,y); ctx.stroke();
+        ctx.beginPath(); ctx.arc(x,y,2.1,0,6.283);
+        ctx.fillStyle=pk.c; ctx.shadowColor=pk.c; ctx.shadowBlur=lowFx?0:9; ctx.fill(); ctx.shadowBlur=0;
       });
       // nodes
-      NODES.forEach(function(n,idx){
-        var p = px(n);
-        var col = COL[n.c]||COL.white;
-        var pulse = 1 + Math.sin(t*1.4 + idx)*0.12;
-        var rr = n.r*pulse;
-        // breathing ring on the coordinator + busy nodes
-        if(n.c==='busy' || n.c==='human'){
-          var ring = (t*0.5 + idx*0.3) % 1;
-          ctx.beginPath(); ctx.arc(p.x,p.y, n.r + ring*16, 0, 6.283);
-          ctx.strokeStyle = col; ctx.globalAlpha = (1-ring)*0.4; ctx.lineWidth=1; ctx.stroke();
-          ctx.globalAlpha = 1;
+      NODES.forEach(function(n){
+        var p=px(n), col=n.c, hub=n.baseR>5;
+        if(n.flash>0) n.flash=Math.max(0,n.flash-dt*1.9);
+        var rr=n.baseR*(1 + Math.sin(T*1.3+n.ph)*0.10 + n.flash*0.55);
+        // receive flash — expanding ring when a message lands
+        if(n.flash>0.02){
+          ctx.beginPath(); ctx.arc(p.x,p.y, n.baseR+(1-n.flash)*18, 0, 6.283);
+          ctx.strokeStyle=col; ctx.globalAlpha=n.flash*0.5; ctx.lineWidth=1; ctx.stroke(); ctx.globalAlpha=1;
         }
-        // node fill
+        // hub breathing ring
+        if(hub){
+          var ring=(T*0.45+n.ph)%1;
+          ctx.beginPath(); ctx.arc(p.x,p.y, n.baseR+ring*18, 0, 6.283);
+          ctx.strokeStyle=col; ctx.globalAlpha=(1-ring)*0.26; ctx.lineWidth=1; ctx.stroke(); ctx.globalAlpha=1;
+        }
         ctx.beginPath(); ctx.arc(p.x,p.y, rr, 0, 6.283);
-        ctx.fillStyle = '#0A0A0B'; ctx.fill();
-        ctx.lineWidth = 1.6; ctx.strokeStyle = col;
-        ctx.shadowColor = col; ctx.shadowBlur = 10; ctx.stroke(); ctx.shadowBlur = 0;
-        // core dot
-        ctx.beginPath(); ctx.arc(p.x,p.y, rr*0.34, 0, 6.283); ctx.fillStyle = col; ctx.fill();
-        // label
+        ctx.fillStyle='#0A0A0B'; ctx.fill();
+        ctx.lineWidth=hub?1.6:1.2; ctx.strokeStyle=col;
+        ctx.shadowColor=col; ctx.shadowBlur=lowFx?0:(hub?10:6); ctx.stroke(); ctx.shadowBlur=0;
+        ctx.beginPath(); ctx.arc(p.x,p.y, rr*0.34, 0, 6.283); ctx.fillStyle=col; ctx.fill();
         if(n.lbl){
-          ctx.font = '9px "JetBrains Mono", monospace';
-          ctx.fillStyle = 'rgba(142,142,150,0.85)'; ctx.textAlign='center';
-          ctx.fillText(n.lbl, p.x, p.y + n.r + 15);
+          ctx.font='9px "JetBrains Mono", monospace';
+          ctx.fillStyle='rgba(142,142,150,0.78)'; ctx.textAlign='center';
+          ctx.fillText(n.lbl, p.x, p.y + n.baseR + 14);
         }
       });
       raf = requestAnimationFrame(draw);

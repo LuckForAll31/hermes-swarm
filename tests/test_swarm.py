@@ -12,7 +12,7 @@ Architecture:
   - Connects to a real LiteLLM proxy on port 4000.
 
 Run:
-    PYTHONPATH=/Users/pradhyun/.hermes/hermes-agent python3 test_swarm.py
+    PYTHONPATH=$HERMES_AGENT_PATH python3 test_swarm.py
 """
 
 import asyncio
@@ -351,7 +351,7 @@ def _register_send_peer_message_tool() -> None:
     Register the send_peer_message tool in the Hermes tool registry.
     """
     try:
-        sys.path.insert(0, "/Users/pradhyun/.hermes/hermes-agent")
+        sys.path.insert(0, os.environ.get("HERMES_AGENT_PATH", os.path.expanduser("~/.hermes/hermes-agent")))
         from tools.registry import registry
 
         if "send_peer_message" not in (registry.get_tool_to_toolset_map() or {}):
@@ -436,7 +436,7 @@ def _register_ask_human_tool() -> None:
     Register the ask_human tool in the Hermes tool registry.
     """
     try:
-        sys.path.insert(0, "/Users/pradhyun/.hermes/hermes-agent")
+        sys.path.insert(0, os.environ.get("HERMES_AGENT_PATH", os.path.expanduser("~/.hermes/hermes-agent")))
         from tools.registry import registry
 
         if "ask_human" not in (registry.get_tool_to_toolset_map() or {}):
@@ -493,7 +493,7 @@ class AgentDaemon:
         if self._ai_agent is not None:
             return
         try:
-            sys.path.insert(0, "/Users/pradhyun/.hermes/hermes-agent")
+            sys.path.insert(0, os.environ.get("HERMES_AGENT_PATH", os.path.expanduser("~/.hermes/hermes-agent")))
             from run_agent import AIAgent
 
             self._ai_agent = AIAgent(

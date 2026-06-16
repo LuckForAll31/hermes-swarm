@@ -32,3 +32,7 @@ Thumbs.db
 
 scratch/
 .impeccable/
+
+# Personal dev scripts / runtime cruft (kept local, not published)
+seed_team.py
+wakeup_log.txt

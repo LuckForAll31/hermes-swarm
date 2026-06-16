@@ -8,4 +8,11 @@ Hermes is resolved automatically (pip `hermes-agent`, else HERMES_AGENT_PATH,
 else ~/.hermes/hermes-agent). See config.ensure_hermes_importable.
 """
 
-__version__ = "0.4.0"
+# Single source of truth is pyproject.toml; read it back from the installed
+# package metadata so the version never drifts between the two.
+from importlib.metadata import version as _version, PackageNotFoundError as _PNF
+
+try:
+    __version__ = _version("hermes-swarm")
+except _PNF:  # running from a source tree without an install
+    __version__ = "0.0.0+source"

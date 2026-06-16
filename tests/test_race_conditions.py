@@ -12,7 +12,7 @@ def main():
 
     env = {
         **os.environ,
-        "PYTHONPATH": "/Users/pradhyun/.hermes/hermes-agent"
+        "PYTHONPATH": os.environ.get("HERMES_AGENT_PATH", os.path.expanduser("~/.hermes/hermes-agent"))
     }
     server_process = subprocess.Popen(
         [sys.executable, "-u", "test_swarm.py"],

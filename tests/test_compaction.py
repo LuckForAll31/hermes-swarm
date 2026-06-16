@@ -17,7 +17,7 @@ Three layers, fast → slow:
                  resumes from the compacted child session.
 
 Run:
-    PYTHONPATH=/Users/pradhyun/.hermes/hermes-agent \
+    PYTHONPATH=$HERMES_AGENT_PATH \
       python3 tests/test_compaction.py
 """
 
@@ -29,7 +29,7 @@ from pathlib import Path
 # Make the swarm package + Hermes importable when run as a script.
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
-HERMES_PATH = "/Users/pradhyun/.hermes/hermes-agent"
+HERMES_PATH = os.environ.get("HERMES_AGENT_PATH", os.path.expanduser("~/.hermes/hermes-agent"))
 if HERMES_PATH not in sys.path:
     sys.path.insert(0, HERMES_PATH)
 

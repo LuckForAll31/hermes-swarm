@@ -16,8 +16,71 @@ real-time console to command them.
 
 ## Quick start
 
-**macOS & Linux - one line.** Clones, installs, runs `hermes setup`, and opens
-the dashboard at **http://127.0.0.1:8000**:
+> **Have an AI coding agent?** Paste one of these prompts into **Claude Code,
+> Codex, opencode, or Hermes itself** and it'll install and set up the whole swarm
+> for you — clone, dependencies, provider, and first run.
+
+<details>
+<summary><b>📋 Local install prompt</b> — set it up on this machine</summary>
+
+```text
+Install and run Hermes Swarm on this machine for me.
+
+Hermes Swarm (https://github.com/CyberTron957/hermes-mission-control) is a
+self-hosted multi-agent server with a real-time dashboard. Please:
+
+1. Check prerequisites first: Python 3.11+ (or Docker). If something is missing,
+   tell me before installing any system packages.
+2. Clone the repo into ./hermes-swarm and run its installer: `bash install.sh`.
+   It creates a .venv, installs dependencies, and installs Chromium for the
+   browser tools. (Pass `--no-browser` if Chromium can't install — everything
+   else still works.)
+3. The installer runs `hermes setup` to pick an LLM provider + API key — PAUSE
+   and ask me which provider to use and for the key. Do not guess or hardcode one.
+4. Verify with `hermes-swarm doctor` and fix anything it flags.
+5. Scaffold a starter team and start the server: `hermes-swarm init && hermes-swarm up`.
+6. Confirm the dashboard is live at http://127.0.0.1:8000, then tell me how to
+   open it and build my first team with the Architect.
+
+Keep my API key local. Don't commit anything or send data anywhere.
+```
+
+</details>
+
+<details>
+<summary><b>📋 VPS install prompt</b> — deploy it on a server, exposed safely</summary>
+
+```text
+Deploy Hermes Swarm on this VPS, exposed safely over HTTPS.
+
+Hermes Swarm (https://github.com/CyberTron957/hermes-mission-control) is a
+self-hosted multi-agent server. Its agents can run terminal commands as the
+server user, so containment and auth matter. Please:
+
+1. Read docs/deploy-vps.md in the repo and follow its hardened path. Prefer the
+   Docker route so the agents' terminal access stays contained.
+2. Clone the repo and bring it up with Docker Compose (restart: unless-stopped).
+3. Generate a strong SWARM_API_KEY and set it — it must guard every endpoint and
+   the WebSocket. Show it to me once and store it somewhere I can find it.
+4. Configure the LLM provider via `hermes setup` against the shared config —
+   PAUSE and ask me for the provider + API key.
+5. Put it behind a TLS reverse proxy (Caddy or nginx) for my domain — ask me for
+   the domain/subdomain — with automatic HTTPS.
+6. Lock down the firewall: only 80/443 and SSH open; do NOT expose the raw app
+   port.
+7. Verify: GET /health returns ok, and the dashboard loads over HTTPS and prompts
+   for the API key.
+8. Report back the URL, where the API key is stored, and how to watch logs
+   (docker logs / journald).
+
+Ask me before anything destructive. Never print my API key or provider key into a
+file that could be committed.
+```
+
+</details>
+
+**Or do it yourself — macOS & Linux, one line.** Clones, installs, runs
+`hermes setup`, and opens the dashboard at **http://127.0.0.1:8000**:
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/CyberTron957/hermes-mission-control/main/install.sh)

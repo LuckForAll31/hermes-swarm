@@ -9,7 +9,7 @@ description = "P2P multi-agent swarm server with a real-time dashboard, powered 
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "Tron957" }]
+authors = [{ name = "Pradhyun" }]
 keywords = ["agents", "multi-agent", "hermes", "swarm", "llm", "automation"]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -44,7 +44,9 @@ web = ["crawl4ai"]
 hermes-swarm = "swarm_server.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/NousResearch/hermes-agent"
+Homepage = "https://github.com/CyberTron957/hermes-mission-control"
+Repository = "https://github.com/CyberTron957/hermes-mission-control"
+Issues = "https://github.com/CyberTron957/hermes-mission-control/issues"
 
 [tool.setuptools]
 packages = ["swarm_server"]
