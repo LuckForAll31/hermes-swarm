@@ -74,8 +74,33 @@ def _setup_logging() -> None:
     configure_logging()
 
 
+BANNER = r"""
+  _    _                                 _____                                 
+ | |  | |                               / ____|                                
+ | |__| | ___ _ __ _ __ ___   ___  ___ | (___ __      ____ _ _ __ _ __ ___     
+ |  __  |/ _ \ '__| '_ ` _ \ / _ \/ __| \___ \\ \ /\ / / _` | '__| '_ ` _ \    
+ | |  | |  __/ |  | | | | | |  __/\__ \ ____) |\ V  V / (_| | |  | | | | | |   
+ |_|  |_|\___|_|  |_| |_| |_|\___||___/|_____/  \_/\_/ \__,_|_|  |_| |_| |_|   
+
+    Commands:
+      • Start Swarm (FG):  hermes-swarm up
+      • Start (Detached):  hermes-swarm up --detach
+      • Stop Swarm:        hermes-swarm down
+      • Check Status:      hermes-swarm status
+      • Configuration:     hermes-swarm setup
+      • Swarm Doctor:      hermes-swarm doctor
+"""
+
+def print_banner() -> None:
+    if sys.stdout.isatty():
+        print(f"\033[1;32m{BANNER}\033[0m")
+    else:
+        print(BANNER)
+
+
 def cmd_up(args) -> int:
     """Run the server — in the foreground, or detached with `--detach`."""
+    print_banner()
     if getattr(args, "detach", False):
         return _start_detached(args)
     return _serve(args)

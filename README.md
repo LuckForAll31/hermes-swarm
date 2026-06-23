@@ -96,8 +96,8 @@ file that could be committed.
 
 </details>
 
-**Or do it yourself — macOS & Linux, one line.** Clones, installs, runs
-`hermes setup`, and opens the dashboard at **http://127.0.0.1:8000**:
+
+**Or do it yourself — macOS & Linux, one line.** 
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/CyberTron957/hermes-mission-control/main/install.sh)
@@ -105,62 +105,25 @@ bash <(curl -fsSL https://raw.githubusercontent.com/CyberTron957/hermes-mission-
 
 
 <details>
-<summary><b>Docker</b> , <b>from a clone</b> , <b>Windows</b></summary>
+<summary><b>Install with Docker</b> <b> or from a clone</b> </summary>
 
 ```bash
-# Docker - bundles Python, Hermes, Chromium
+# Docker
 git clone https://github.com/CyberTron957/hermes-mission-control hermes-swarm && cd hermes-swarm
-docker compose run --rm swarm hermes-swarm setup   # full wizard → shared config on the volume
+docker compose run --rm swarm hermes-swarm setup  
 docker compose up --build
-# manage it:  docker compose ps   ·   docker compose logs -f   ·   docker compose down
-# Already configured Hermes on the host? Uncomment the ~/.hermes mount in
-# docker-compose.yml to adopt that provider + tool keys automatically.
 ```
 or
 ```bash
-# From a clone - same installer, locally
+# From a clone 
 git clone https://github.com/CyberTron957/hermes-mission-control hermes-swarm && cd hermes-swarm
 bash install.sh
 ```
 
-**Windows:** run the one-liner in [WSL](https://learn.microsoft.com/windows/wsl/), or use Docker.
-
 </details>
 
-## What it does
-
-- **Full agents, not prompts in a loop.** Each agent has a real terminal, a
-  browser, and a filesystem - and the autonomy to use them.
-- **One real-time console.** Watch every agent think → call a tool → answer, on a
-  live graph of who supervises and collaborates with whom.
-- **Peer-to-peer teams.** Agents message teammates on a shared project;
-  supervisors review and nudge; a loop detector breaks stalls before they cost.
-- **Human inbox.** Agents ask you for a login, a decision, or an approval - it
-  lands in your inbox and they resume when you reply.
-- **Embedded browser takeover.** Clear a login or CAPTCHA inside the agent's live
-  browser, right in the dashboard - even on a headless VPS.
-- **Budgets & schedules.** Per-team daily USD caps that auto-pause at the limit,
-  plus cron wake-ups for recurring work.
-- **Self-hosted.** Runs entirely on your hardware; provider keys and data stay
-  local on disk.
-
-## How it works
-
-1. **Configure a provider** - one `hermes-swarm setup` wizard: pick from 40+
-   providers, paste a key, choose a model, and (optionally) configure web-search,
-   vision, browser, and memory tools — all written to the swarm's shared config.
-   *(Headless / scripting? Set just the model non-interactively with
-   `hermes-swarm set-model --provider … --model … [--base-url …] --api-key …`, or
-   the `SWARM_SETUP_*` env vars the installer reads. An existing `~/.hermes` setup
-   is detected and adopted automatically — no reconfiguration needed.)*
-2. **Build a team** - tell the Architect what you want; it proposes the agents,
-   their roles, and who talks to whom, then builds it on your approval.
-3. **Deploy & steer** - hand the team a mission and watch it run from the console.
-   Answer questions, approve changes, and adjust budgets from one screen.
 
 ## Features
-
-The short list above is the gist; here's everything in the box.
 
 **Teams & collaboration**
 - Multiple teams, each with its own shared `project/` directory and a
@@ -173,8 +136,7 @@ The short list above is the gist; here's everything in the box.
   with rolled-up summaries so long-term memory survives compaction.
 
 **Each agent is a full Hermes agent**
-- A real terminal and code execution, a headless Chromium browser, and
-  read/write access to the team's filesystem.
+- A real terminal and code execution, a headless Chromium browser (enhanced with custom tools: coordinate clicks `browser_click_xy`, typing `browser_keys`, multi-step macro `browser_steps`, and VLM grounding `browser_locate`), and read/write access to the team's filesystem.
 - Web research out of the box: `web_search` + `web_extract`, using a configured
   Hermes backend (Firecrawl/Tavily/Exa/…) if present, else a built-in fetcher
   (`httpx`, or optional crawl4ai for JS-heavy pages).
@@ -223,7 +185,7 @@ The short list above is the gist; here's everything in the box.
 - A token-cap fallback for models with no known price; per-turn token and cost
   tracking throughout.
 - A per-team **credentials** store on disk with `0600` permissions - referenced by
-  name, never echoed back.
+  name, never echoed back, with purpose validation to prevent prompt leakage.
 - A single `SWARM_API_KEY` that, when set, guards **every** HTTP endpoint *and* the
   live WebSocket; the dashboard prompts for it once.
 
@@ -244,7 +206,7 @@ The short list above is the gist; here's everything in the box.
 
 **Deployment & operations**
 - One-command `install.sh`, Docker + compose, or pip - whichever fits your machine.
-- A `hermes-swarm` CLI (`up` / `doctor` / `init`) where `doctor` pinpoints a bad
+- A `hermes-swarm` CLI (`up` foreground/detached, `down`, `status`, `setup`, `set-model`, `init`, `doctor`) where `doctor` pinpoints a bad
   install (Hermes, model, Chromium, compat seams).
 - A systemd unit example, stdout logs, and optional on-disk rotating logs
   (`SWARM_LOG_FILE`).
@@ -253,15 +215,8 @@ The short list above is the gist; here's everything in the box.
 - All state under `SWARM_DATA_DIR` with rotating config backups; built on Hermes,
   which it tracks automatically via a compatibility self-check.
 
-## Self-hosting
-
-The server binds `127.0.0.1` with no key by default. To expose it, set
-`SWARM_API_KEY` and put it behind a TLS reverse proxy. Agents run terminal
-commands as the server user, so on a shared or public host prefer Docker (or a
-dedicated user). See **[Deploy on a VPS](docs/deploy-vps.md)** for a hardened
-setup. Built on top of [Hermes](https://github.com/NousResearch/hermes-agent),
-which it stays current with automatically.
-
+## Hosting on VPS? 
+See **[Deploy on a VPS](docs/deploy-vps.md)** 
 ## License
 
 Released under the [MIT License](LICENSE).

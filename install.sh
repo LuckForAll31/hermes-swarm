@@ -247,17 +247,50 @@ step "Verifying (hermes-swarm doctor)"
 step "Scaffolding a starter team"
 "$VENV/bin/hermes-swarm" init || warn "init skipped (see above)."
 
+# ---- 8. expose binaries to user PATH --------------------------------------
+step "Exposing commands to user PATH"
+if [ -d "$HOME/.local/bin" ] || mkdir -p "$HOME/.local/bin" 2>/dev/null; then
+  ln -sf "$VENV/bin/hermes-swarm" "$HOME/.local/bin/hermes-swarm"
+  ln -sf "$VENV/bin/hermes" "$HOME/.local/bin/hermes"
+  info "Symlinked hermes-swarm and hermes to $HOME/.local/bin"
+
+  # Ensure $HOME/.local/bin is in PATH in ~/.bashrc, ~/.zshrc, or ~/.profile if it's not already
+  for f in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile"; do
+    if [ -f "$f" ]; then
+      if ! grep -q '\.local/bin' "$f" 2>/dev/null; then
+        echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$f"
+        info "Added $HOME/.local/bin to $f"
+      fi
+    fi
+  done
+else
+  warn "Could not create $HOME/.local/bin to symlink commands."
+fi
+
 # ---- done: start now, or print the one command to do it -------------------
 # Absolute paths so they work from any shell (e.g. after a web-bootstrap clone).
 START_CMD="$VENV/bin/hermes-swarm up"
+printf "%s" "$G"
+cat << "EOF"
+
+  _    _                                 _____                                 
+ | |  | |                               / ____|                                
+ | |__| | ___ _ __ _ __ ___   ___  ___ | (___ __      ____ _ _ __ _ __ ___     
+ |  __  |/ _ \ '__| '_ ` _ \ / _ \/ __| \___ \\ \ /\ / / _` | '__| '_ ` _ \    
+ | |  | |  __/ |  | | | | | |  __/\__ \ ____) |\ V  V / (_| | |  | | | | | |   
+ |_|  |_|\___|_|  |_| |_| |_|\___||___/|_____/  \_/\_/ \__,_|_|  |_| |_| |_|   
+
+    Commands:
+      • Start Swarm:  hermes-swarm up
+      • Stop Swarm:        hermes-swarm down
+      • Check Status:      hermes-swarm status
+      • Configuration:     hermes-swarm setup
+      • Swarm Doctor:      hermes-swarm doctor
+
+EOF
+printf "%s" "$X"
 step "Done — your swarm is installed in $PWD"
-info "Manage the server (run these from anywhere):"
-info "  start:    $START_CMD            → http://127.0.0.1:8000"
-info "  start bg: $START_CMD --detach   (daemonizes; survives this shell)"
-info "  status:   $VENV/bin/hermes-swarm status"
-info "  stop:     $VENV/bin/hermes-swarm down"
-info "Customize providers / web-search / vision / browser tools / memory:"
-info "  $VENV/bin/hermes-swarm setup     (full interactive wizard)"
+info "(If commands are not found yet in this terminal, run 'source ~/.bashrc' or use the full path: $START_CMD)"
 if [ "$NO_RUN" -eq 0 ] && [ "$ASSUME_YES" -eq 0 ] && [ -t 0 ]; then
   printf '\n    Start it now? [Y/n] '
   read -r _ans

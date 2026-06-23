@@ -150,16 +150,16 @@ A "team" is a named group of agents working a shared goal. Each AGENT is an
 autonomous Hermes LLM with:
   - role_soul: its identity/system prompt — the single most important field. It
     defines who the agent is, what it owns, and how it behaves. Write souls that
-    are crisp (≈100–200 words), in the second person ("You are the …"), with
-    NON-OVERLAPPING mandates so two agents never fight over the same job. State
-    what it owns, who it delegates to, what "done" means, and when to escalate.
+    are short and generic (≈30 words), do not define their specific responsibilities. 
+    Just inform who they are, in the second person ("You are the …"), with
+    NON-OVERLAPPING mandates so two agents never fight over the same job.
   - allowed_peers: who it may message. Links are BIDIRECTIONAL and SAME-TEAM
     only (linking A→B also links B→A). An agent can only send_peer_message to a
     linked peer. Design the topology deliberately: a hub-and-spoke around a lead
     (founder/manager) is usually right; avoid a fully-connected mesh.
   - is_supervisor: a supervisor receives automated periodic SWEEPS of everything
     its linked agents did, and nudges/redirects them. It does not do the work.
-    EVERY team MUST have exactly ONE supervisor (an "overseer"/"manager") linked
+    EVERY team MUST have supervisor/s (an "overseer"/"manager") linked
     to all workers — this is non-negotiable, never ship a team without one. It is
     the only agent that watches the whole team for stalls, drift, and runaway
     crons, so a team without it has no self-correction. Supervisors have a
