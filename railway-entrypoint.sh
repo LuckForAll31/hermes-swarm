@@ -35,13 +35,28 @@ else
     echo "⚠ SWARM_LLM_API_KEY not set — run 'hermes-swarm setup' via Railway shell to configure a provider"
 fi
 
-# ── Auto-init on first run ──────────────────────────────────────
-# If no teams config exists, scaffold a default team so the
-# dashboard has something to show immediately.
+# ── Auto-init teams on first run ────────────────────────────────
+# Idempotent: skips already-existing teams.
 CONFIG_FILE="${SWARM_DATA_DIR:-/data}/agents.json"
 if [ ! -f "$CONFIG_FILE" ]; then
-    echo "● First run detected — scaffolding default team..."
-    hermes-swarm init --team default --team-name "Default Team" || true
+    echo "● First run detected — scaffolding teams..."
+
+    # ── KairHub (entreprise) ────────────────────────────────────
+    echo "  → Creating team: kairhub"
+    hermes-swarm init --team kairhub --team-name "KairHub" \
+        --agent coordinator --agent-name "KairHub Coordinator" || true
+
+    # ── MoodPlanner / LudiCare ──────────────────────────────────
+    echo "  → Creating team: moodplanner"
+    hermes-swarm init --team moodplanner --team-name "MoodPlanner / LudiCare" \
+        --agent coordinator --agent-name "Mood Coordinator" || true
+
+    # ── Cuisko ──────────────────────────────────────────────────
+    echo "  → Creating team: cuisko"
+    hermes-swarm init --team cuisko --team-name "Cuisko" \
+        --agent coordinator --agent-name "Cuisko Coordinator" || true
+
+    echo "● Teams created: kairhub, moodplanner, cuisko"
 fi
 
 # ── Start the swarm server ──────────────────────────────────────
