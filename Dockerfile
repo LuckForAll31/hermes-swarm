@@ -38,10 +38,10 @@ RUN python -m playwright install --with-deps chromium 2>/dev/null \
 ENV SWARM_DATA_DIR=/data \
     SWARM_HOST=0.0.0.0 \
     SWARM_PORT=8000
-VOLUME ["/data"]
+# VOLUME is managed by Railway Volumes (attached at deploy time)
 EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
-    CMD curl -fsS http://127.0.0.1:8000/health || exit 1
+# Healthcheck handled by Railway via railway.toml (healthcheckPath: /health)
+# HEALTHCHECK removed — Railway overrides it
 
 CMD ["hermes-swarm", "up"]
